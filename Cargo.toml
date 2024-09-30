@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# revm
+revm = { git = "https://github.com/bluealloy/revm.git", ref = "ca5b2fe15e0b9920ede13f1c67918b93bfdc12c2", default-features = false }
+primitives = { package = "revm-primitives", git = "https://github.com/bluealloy/revm.git", ref = "ca5b2fe15e0b9920ede13f1c67918b93bfdc12c2", default-features = false }
+
+# misc
+enumn = { version = "0.1" }
+once_cell = { version = "1.19", default-features = false, features = ["alloc"] }
