@@ -111,8 +111,7 @@ pub fn deduct_caller<EvmWiringT: ScrollWiring, SPEC: ScrollSpec>(
                 InvalidTransaction::LackOfFundForMaxFee {
                     fee: tx_l1_cost.into(),
                     balance: caller_account.info.balance.into(),
-                }
-                .into(),
+                },
             ));
         }
         caller_account.data.info.balance =

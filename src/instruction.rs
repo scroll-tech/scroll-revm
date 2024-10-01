@@ -9,7 +9,6 @@ use revm::{
         Host, InstructionResult, Interpreter,
     },
     primitives::{keccak256, BLOCK_HASH_HISTORY, U256},
-    specification::hardfork::Spec,
     wiring::Block,
 };
 
@@ -30,12 +29,12 @@ pub fn make_scroll_instruction_tables<'a, H: Host + ?Sized, SPEC: ScrollSpec>(
     let mut table = make_instruction_table::<H, SPEC>();
 
     // override the instructions
-    table[opcode::BLOCKHASH as usize] = blockhash::<H, SPEC>;
+    table[opcode::BLOCKHASH as usize] = blockhash::<H>;
     table[opcode::BASEFEE as usize] = basefee::<H, SPEC>;
-    table[opcode::EXTCODESIZE as usize] = extcodesize::<H, SPEC>;
+    table[opcode::EXTCODESIZE as usize] = extcodesize::<H>;
     table[opcode::TSTORE as usize] = tstore::<H, SPEC>;
     table[opcode::TLOAD as usize] = tload::<H, SPEC>;
-    table[opcode::SELFDESTRUCT as usize] = selfdestruct::<H, SPEC>;
+    table[opcode::SELFDESTRUCT as usize] = selfdestruct::<H>;
     table[opcode::MCOPY as usize] = mcopy::<H, SPEC>;
 
     InstructionTables::Plain(table)
@@ -49,7 +48,7 @@ pub fn make_scroll_instruction_tables<'a, H: Host + ?Sized, SPEC: ScrollSpec>(
 /// The blockhash is computed as the keccak256 hash of the chain id and the block number.
 /// If the requested block number is the current block number, a future block number or a block number
 /// older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {
+fn blockhash<H: Host + ?Sized>(interpreter: &mut Interpreter, host: &mut H) {
     gas!(interpreter, gas::BLOCKHASH);
     pop_top!(interpreter, requested_block_number);
 
@@ -72,7 +71,7 @@ fn blockhash<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: 
     };
 }
 
-fn extcodesize<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {
+fn extcodesize<H: Host + ?Sized>(interpreter: &mut Interpreter, host: &mut H) {
     pop_address!(interpreter, address);
     let Some(code) = host.code(address) else {
         interpreter.instruction_result = InstructionResult::FatalExternalError;
@@ -86,7 +85,7 @@ fn extcodesize<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host
     push!(interpreter, U256::from(code.len()));
 }
 
-fn selfdestruct<H: Host + ?Sized, SPEC: ScrollSpec>(interpreter: &mut Interpreter, _host: &mut H) {
+fn selfdestruct<H: Host + ?Sized>(interpreter: &mut Interpreter, _host: &mut H) {
     interpreter.instruction_result = InstructionResult::NotActivated;
 }
 
