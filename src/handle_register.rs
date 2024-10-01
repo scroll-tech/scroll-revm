@@ -25,8 +25,8 @@ use crate::{
 /// This function modifies the following handlers:
 /// - `pre_execution.load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that
 ///    it can be used to calculate the L1 cost of a transaction.
-/// - `pre_execution.deduct_caller` - Overrides the logic to deduct the max transaction fee from the
-///   caller's balance.
+/// - `pre_execution.deduct_caller` - Overrides the logic to deduct the max transaction fee, including
+///    the L1 fee, from the caller's balance.
 /// - `pre_execution.load_precompiles` - Overrides the logic to load the precompiles for the Scroll chain.
 /// - `post_execution.reward_beneficiary` - Overrides the logic to reward the beneficiary with the gas fee.
 /// - `set_instruction_table` - Overrides the instruction table with the Scroll instruction tables.
@@ -35,16 +35,17 @@ where
     EvmWiringT: ScrollWiring,
 {
     scroll_spec_to_generic!(handler.spec_id, {
-        // Load l1 data
+        // Load `L1BlockInfo` from the database and invoke standard `load_accounts` handler.
         handler.pre_execution.load_accounts = Arc::new(load_accounts::<EvmWiringT, SPEC>);
-        // L1_fee is added to the gas cost.
+        // Override the logic to deduct the max transaction fee from the caller's balance
+        // including the L1 cost of the transaction.
         handler.pre_execution.deduct_caller = Arc::new(deduct_caller::<EvmWiringT, SPEC>);
-        // Load precompiles for the given chain spec.
+        // Load the precompiles that are specific to the Scroll chain for the specific hardfork.
         handler.pre_execution.load_precompiles = Arc::new(load_precompiles::<EvmWiringT, SPEC>);
-        // basefee is sent to coinbase
+        // Override the logic to reward the beneficiary with the gas fee including the L1 cost of the transaction.
         handler.post_execution.reward_beneficiary =
             Arc::new(reward_beneficiary::<EvmWiringT, SPEC>);
-        // override instruction table
+        // override instruction table with Scroll instruction tables.
         handler.set_instruction_table(make_scroll_instruction_tables::<_, SPEC>());
     });
 }
@@ -110,8 +111,7 @@ pub fn deduct_caller<EvmWiringT: ScrollWiring, SPEC: ScrollSpec>(
                 InvalidTransaction::LackOfFundForMaxFee {
                     fee: tx_l1_cost.into(),
                     balance: caller_account.info.balance.into(),
-                }
-                .into(),
+                },
             ));
         }
         caller_account.data.info.balance =
@@ -137,12 +137,17 @@ pub fn reward_beneficiary<EvmWiringT: ScrollWiring, SPEC: ScrollSpec>(
     context: &mut Context<EvmWiringT>,
     gas: &Gas,
 ) -> EVMResultGeneric<(), EvmWiringT> {
-    let beneficiary = *context.evm.env.block.coinbase();
+    // If the transaction is an L1 message, we do not need to reward the beneficiary as the
+    // transaction has already been payed for on L1.
+    if context.evm.inner.env.tx.is_l1_msg() {
+        return Ok(());
+    }
+
+    // fetch the effective gas price.
     let effective_gas_price = context.evm.env.effective_gas_price();
 
-    // transfer fee to coinbase/beneficiary.
-    let coinbase_gas_price = effective_gas_price;
-
+    // load beneficiary's account.
+    let beneficiary = *context.evm.env.block.coinbase();
     let coinbase_account = context
         .evm
         .inner
@@ -150,29 +155,28 @@ pub fn reward_beneficiary<EvmWiringT: ScrollWiring, SPEC: ScrollSpec>(
         .load_account(beneficiary, &mut context.evm.inner.db)
         .map_err(EVMError::Database)?;
 
-    if !context.evm.inner.env.tx.is_l1_msg() {
-        let Some(l1_block_info) = &context.evm.inner.chain.l1_block_info() else {
-            return Err(EVMError::Custom(
-                "[SCROLL] Failed to load L1 block information.".to_string(),
-            ));
-        };
+    // calculate the L1 cost of the transaction.
+    let Some(l1_block_info) = &context.evm.inner.chain.l1_block_info() else {
+        return Err(EVMError::Custom(
+            "[SCROLL] Failed to load L1 block information.".to_string(),
+        ));
+    };
+    let Some(rlp_bytes) = &context.evm.inner.env.tx.rlp_bytes() else {
+        return Err(EVMError::Custom(
+            "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
+        ));
+    };
+    let l1_cost = l1_block_info.calculate_tx_l1_cost(rlp_bytes, SPEC::SCROLL_SPEC_ID);
 
-        let Some(rlp_bytes) = &context.evm.inner.env.tx.rlp_bytes() else {
-            return Err(EVMError::Custom(
-                "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
-            ));
-        };
-
-        let l1_cost = l1_block_info.calculate_tx_l1_cost(rlp_bytes, SPEC::SCROLL_SPEC_ID);
-
-        coinbase_account.data.mark_touch();
-        coinbase_account.data.info.balance = coinbase_account
-            .data
-            .info
-            .balance
-            .saturating_add(coinbase_gas_price * U256::from(gas.spent() - gas.refunded() as u64))
-            .saturating_add(l1_cost);
-    }
+    // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark the
+    // account as touched.
+    coinbase_account.data.info.balance = coinbase_account
+        .data
+        .info
+        .balance
+        .saturating_add(effective_gas_price * U256::from(gas.spent() - gas.refunded() as u64))
+        .saturating_add(l1_cost);
+    coinbase_account.data.mark_touch();
 
     Ok(())
 }

@@ -10,6 +10,9 @@ use revm::{
 };
 
 /// The Scroll transaction environment.
+///
+/// This consists of the base Ethereum transaction environment, a flag indicating whether the
+/// transaction is an L1 message, and the RLP encoded transaction bytes.
 pub struct TxEnv {
     /// The base transaction environment.
     pub base: EthTxEnv,
