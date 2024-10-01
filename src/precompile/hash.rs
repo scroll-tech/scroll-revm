@@ -17,14 +17,14 @@ pub mod sha256 {
     const SHA256_PRECOMPILE_ADDRESS: Address = u64_to_address(SHA256_PRECOMPILE_INDEX);
 
     // SHA256 SHANGHAI PRECOMPILE
-    // ------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
     /// The shanghai SHA256 precompile implementation with address.
     pub const SHA256_SHANGHAI: PrecompileWithAddress =
         precompile_not_implemented(SHA256_PRECOMPILE_ADDRESS);
 
     // SHA256 BERNOULLI PRECOMPILE
-    // ------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
     /// The bernoulli SHA256 precompile implementation with address.
     pub const SHA256_BERNOULLI: PrecompileWithAddress =
@@ -35,7 +35,7 @@ pub mod ripemd160 {
     use super::*;
 
     // CONSTANTS
-    // ------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
     /// The RIPEMD160 precompile index.
     const RIPEMD160_PRECOMPILE_INDEX: u64 = 3;
@@ -44,7 +44,7 @@ pub mod ripemd160 {
     const RIPEMD160_PRECOMPILE_ADDRESS: Address = u64_to_address(RIPEMD160_PRECOMPILE_INDEX);
 
     // RIPEMD160 SHANGHAI PRECOMPILE
-    // ------------------------------------------------------------------------------------------------
+    // --------------------------------------------------------------------------------------------
 
     /// The shanghai RIPEMD160 precompile implementation with address.
     ///

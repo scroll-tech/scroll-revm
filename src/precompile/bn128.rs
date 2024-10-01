@@ -13,7 +13,7 @@ pub mod pair {
     use super::*;
 
     // CONSTANTS
-    // ================================================================================================
+    // --------------------------------------------------------------------------------------------
 
     /// The BN128 pairing precompile index.
     const BN128_PAIRING_PRECOMPILE_INDEX: u64 = 8;
@@ -30,7 +30,7 @@ pub mod pair {
     const N_BYTES_PER_PAIR: usize = 192;
 
     // BN128 PAIRING PRECOMPILE
-    // ================================================================================================
+    // --------------------------------------------------------------------------------------------
 
     /// The BN128 PAIRING precompile with address.
     pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(

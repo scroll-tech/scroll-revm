@@ -16,6 +16,15 @@ use revm::{
 use crate::{ScrollSpec, ScrollSpecId};
 
 /// Creates a table of instructions for the Scroll hardfork.
+///
+/// The following instructions are overridden:
+/// - `BLOCKHASH`
+/// - `BASEFEE`
+/// - `EXTCODESIZE`
+/// - `TSTORE`
+/// - `TLOAD`
+/// - `SELFDESTRUCT`
+/// - `MCOPY`
 pub fn make_scroll_instruction_tables<'a, H: Host + ?Sized, SPEC: ScrollSpec>(
 ) -> InstructionTables<'a, H> {
     let mut table = make_instruction_table::<H, SPEC>();
