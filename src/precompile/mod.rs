@@ -29,19 +29,19 @@ pub fn load_precompiles<SPEC: ScrollSpec>() -> &'static Precompiles {
         let mut precompiles = Precompiles::default();
 
         precompiles.extend([
-            precompile::secp256k1::ECRECOVER, // 0x01
-            hash::SHA256_SHANGHAI,            // 0x02
-            hash::RIPEMD160_SHANGHAI,         // 0x03
-            precompile::identity::FUN,        // 0x04
-            modexp::BERNOULLI,                // 0x05
-            precompile::bn128::add::ISTANBUL, // 0x06
-            precompile::bn128::mul::ISTANBUL, // 0x07
-            bn128::pair::BERNOULLI,           // 0x08
-            blake2::SHANGHAI,                 // 0x09
+            precompile::secp256k1::ECRECOVER,
+            hash::sha256::SHA256_SHANGHAI,
+            hash::ripemd160::RIPEMD160_SHANGHAI,
+            precompile::identity::FUN,
+            modexp::BERNOULLI,
+            precompile::bn128::add::ISTANBUL,
+            precompile::bn128::mul::ISTANBUL,
+            bn128::pair::BERNOULLI,
+            blake2::SHANGHAI,
         ]);
 
         if SPEC::scroll_enabled(crate::ScrollSpecId::BERNOULLI) {
-            precompiles.extend([hash::SHA256_BERNOULLI]);
+            precompiles.extend([hash::sha256::SHA256_BERNOULLI]);
         }
 
         Box::new(precompiles)

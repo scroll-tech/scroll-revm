@@ -8,20 +8,26 @@ use revm::{
     primitives::{Address, Bytes, U256},
 };
 
+// CONSTANTS
+// ================================================================================================
+
 /// The MODEXP precompile index.
 const MODEXP_PRECOMPILE_INDEX: u64 = 5;
 
 /// The MODEXP precompile address.
 const MODEXP_PRECOMPILE_ADDRESS: Address = u64_to_address(MODEXP_PRECOMPILE_INDEX);
 
+/// The maximum length of the input for the MODEXP precompile.
+const SCROLL_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
+
+// MODEXP PRECOMPILE
+// ================================================================================================
+
 /// The bernoulli MODEXP precompile implementation with address.
 pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(
     MODEXP_PRECOMPILE_ADDRESS,
     Precompile::Standard(bernoulli_run),
 );
-
-/// The maximum length of the input for the MODEXP precompile.
-const SCROLL_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
 
 /// The bernoulli MODEXP precompile implementation.
 ///
