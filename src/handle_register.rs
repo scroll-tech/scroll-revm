@@ -16,8 +16,9 @@ use revm::{
 use std::sync::Arc;
 
 use crate::{
-    instruction::make_scroll_instruction_tables, precompile, scroll_spec_to_generic,
-    spec::ScrollSpec, L1BlockInfo, ScrollContext, ScrollTransaction, ScrollWiring,
+    code::ScrollCodeSizeDatabase, instruction::make_scroll_instruction_tables, precompile,
+    scroll_spec_to_generic, spec::ScrollSpec, L1BlockInfo, ScrollContext, ScrollTransaction,
+    ScrollWiring,
 };
 
 /// Configure the handler for the Scroll chain.
@@ -33,6 +34,7 @@ use crate::{
 pub fn scroll_handle_register<EvmWiringT>(handler: &mut EvmHandler<'_, EvmWiringT>)
 where
     EvmWiringT: ScrollWiring,
+    EvmWiringT::Database: ScrollCodeSizeDatabase,
 {
     scroll_spec_to_generic!(handler.spec_id, {
         // Load `L1BlockInfo` from the database and invoke standard `load_accounts` handler.

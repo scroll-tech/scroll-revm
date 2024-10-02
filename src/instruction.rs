@@ -12,7 +12,7 @@ use revm::{
     wiring::Block,
 };
 
-use crate::{ScrollSpec, ScrollSpecId};
+use crate::{code::ScrollCodeHost, ScrollSpec, ScrollSpecId};
 
 /// Creates a table of instructions for the Scroll hardfork.
 ///
@@ -24,7 +24,7 @@ use crate::{ScrollSpec, ScrollSpecId};
 /// - `TLOAD`
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
-pub fn make_scroll_instruction_tables<'a, H: Host + ?Sized, SPEC: ScrollSpec>(
+pub fn make_scroll_instruction_tables<'a, H: Host + ?Sized + ScrollCodeHost, SPEC: ScrollSpec>(
 ) -> InstructionTables<'a, H> {
     let mut table = make_instruction_table::<H, SPEC>();
 
@@ -71,18 +71,15 @@ fn blockhash<H: Host + ?Sized>(interpreter: &mut Interpreter, host: &mut H) {
     };
 }
 
-fn extcodesize<H: Host + ?Sized>(interpreter: &mut Interpreter, host: &mut H) {
+fn extcodesize<H: Host + ?Sized + ScrollCodeHost>(interpreter: &mut Interpreter, host: &mut H) {
     pop_address!(interpreter, address);
-    let Some(code) = host.code(address) else {
+    let Some((code_size, is_cold)) = host.code_size(address) else {
         interpreter.instruction_result = InstructionResult::FatalExternalError;
         return;
     };
 
-    let (code, load) = code.into_components();
-
-    gas!(interpreter, warm_cold_cost(load.state_load.is_cold));
-
-    push!(interpreter, U256::from(code.len()));
+    gas!(interpreter, warm_cold_cost(is_cold));
+    push!(interpreter, U256::from(code_size));
 }
 
 fn selfdestruct<H: Host + ?Sized>(interpreter: &mut Interpreter, _host: &mut H) {

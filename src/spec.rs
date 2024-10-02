@@ -1,4 +1,7 @@
-use crate::{env::TxEnv, handle_register::scroll_handle_register, ScrollContext};
+use crate::{
+    code::ScrollCodeSizeDatabase, env::TxEnv, handle_register::scroll_handle_register,
+    ScrollContext,
+};
 use core::marker::PhantomData;
 use revm::{
     database_interface::Database,
@@ -15,7 +18,7 @@ pub struct ScrollEvmWiring<DB: Database, EXT> {
     _phantom: PhantomData<(DB, EXT)>,
 }
 
-impl<DB: Database, EXT> EvmWiring for ScrollEvmWiring<DB, EXT> {
+impl<DB: Database + ScrollCodeSizeDatabase, EXT> EvmWiring for ScrollEvmWiring<DB, EXT> {
     type Block = BlockEnv;
     type Database = DB;
     type ChainContext = Context;
@@ -25,7 +28,7 @@ impl<DB: Database, EXT> EvmWiring for ScrollEvmWiring<DB, EXT> {
     type Transaction = TxEnv;
 }
 
-impl<DB: Database, EXT> revm::EvmWiring for ScrollEvmWiring<DB, EXT> {
+impl<DB: Database + ScrollCodeSizeDatabase, EXT> revm::EvmWiring for ScrollEvmWiring<DB, EXT> {
     fn handler<'evm>(hardfork: Self::Hardfork) -> revm::EvmHandler<'evm, Self> {
         let mut handler = EvmHandler::mainnet_with_spec(hardfork);
 

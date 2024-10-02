@@ -1,5 +1,6 @@
 use revm::{primitives::Bytes, wiring::TransactionValidation};
 
+mod code;
 mod env;
 mod handle_register;
 mod instruction;
