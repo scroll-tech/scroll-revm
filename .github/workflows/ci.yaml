@@ -15,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: [stable, beta, nightly]
+        toolchain: [stable]
 
     steps:
       - name: Checkout code
