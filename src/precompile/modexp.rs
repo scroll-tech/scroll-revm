@@ -3,7 +3,7 @@ use revm::{
         modexp::{berlin_gas_calc, run_inner},
         u64_to_address,
         utilities::right_pad_with_offset,
-        Precompile, PrecompileError, PrecompileResult, PrecompileWithAddress,
+        PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
     primitives::{Address, Bytes, U256},
 };
@@ -24,17 +24,18 @@ const SCROLL_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
 // ================================================================================================
 
 /// The bernoulli MODEXP precompile implementation with address.
-pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(
-    MODEXP_PRECOMPILE_ADDRESS,
-    Precompile::Standard(bernoulli_run),
-);
+pub const BERNOULLI: PrecompileWithAddress =
+    PrecompileWithAddress(MODEXP_PRECOMPILE_ADDRESS, bernoulli_run);
 
 /// The bernoulli MODEXP precompile implementation.
 ///
 /// # Errors
-/// - `PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into())` if the base length is greater than 32 bytes.
-/// - `PrecompileError::Other("ModexpExpOverflow: modexp exp overflow".into())` if the exponent length is greater than 32 bytes.
-/// - `PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into())` if the modulus length is greater than 32 bytes.
+/// - `PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into())` if the base length
+///   is greater than 32 bytes.
+/// - `PrecompileError::Other("ModexpExpOverflow: modexp exp overflow".into())` if the exponent
+///   length is greater than 32 bytes.
+/// - `PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into())` if the modulus
+///   length is greater than 32 bytes.
 fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
     let base_len = U256::from_be_bytes(right_pad_with_offset::<32>(input, 0).into_owned());
     let exp_len = U256::from_be_bytes(right_pad_with_offset::<32>(input, 32).into_owned());
@@ -42,9 +43,7 @@ fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
 
     // modexp temporarily only accepts inputs of 32 bytes (256 bits) or less
     if base_len > SCROLL_LEN_LIMIT {
-        return Err(
-            PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into()).into(),
-        );
+        return Err(PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into()).into());
     }
     if exp_len > SCROLL_LEN_LIMIT {
         return Err(PrecompileError::Other("ModexpExpOverflow: modexp exp overflow".into()).into());
@@ -53,7 +52,5 @@ fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
         return Err(PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into()).into());
     }
 
-    run_inner(input, gas_limit, 200, |a, b, c, d| {
-        berlin_gas_calc(a, b, c, d)
-    })
+    run_inner(input, gas_limit, 200, berlin_gas_calc)
 }
