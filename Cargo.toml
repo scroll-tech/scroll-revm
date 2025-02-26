@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 # revm
-revm = { git = "https://github.com/bluealloy/revm.git", ref = "ca5b2fe15e0b9920ede13f1c67918b93bfdc12c2", default-features = false }
+revm = { version = "20.0.0-alpha.1", default-features = false }
 primitives = { package = "revm-primitives", git = "https://github.com/bluealloy/revm.git", ref = "ca5b2fe15e0b9920ede13f1c67918b93bfdc12c2", default-features = false }
 
 # misc
+auto_impl = "1.2.0"
 enumn = { version = "0.1" }
 once_cell = { version = "1.19", default-features = false, features = ["alloc"] }
+
+[patch.crates-io]
+revm = { git = "https://github.com/bluealloy/revm", rev = "a8a9893b" }
