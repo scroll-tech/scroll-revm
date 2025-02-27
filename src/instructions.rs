@@ -5,6 +5,7 @@ use core::cmp::max;
 use revm::{
     bytecode::opcode,
     context::{Block, Cfg},
+    handler::instructions::InstructionProvider,
     interpreter::{
         as_u64_saturated, as_usize_or_fail, gas,
         gas::warm_cold_cost,
@@ -13,7 +14,7 @@ use revm::{
         interpreter_types::{InputsTr, LoopControl, MemoryTr, RuntimeFlag, StackTr},
         push, require_non_staticcall, resize_memory,
         table::{make_instruction_table, InstructionTable},
-        Host, InstructionResult, Interpreter, InterpreterTypes,
+        Host, InstructionResult, Interpreter, InterpreterAction, InterpreterTypes,
     },
     primitives::{keccak256, BLOCK_HASH_HISTORY, U256},
 };
@@ -25,6 +26,22 @@ impl<T> ScrollHost for T where T: Host<Cfg: Cfg<Spec = ScrollSpecId>> {}
 /// Holds the EVM instruction table for Scroll.
 pub struct ScrollInstructions<WIRE: InterpreterTypes, HOST> {
     pub instruction_table: Rc<InstructionTable<WIRE, HOST>>,
+}
+
+impl<IT, CTX> InstructionProvider for ScrollInstructions<IT, CTX>
+where
+    IT: InterpreterTypes,
+    CTX: Host,
+{
+    type InterpreterTypes = IT;
+    type Context = CTX;
+    /// TODO Interpreter action could be tied to InterpreterTypes so we can
+    /// set custom actions from instructions.
+    type Output = InterpreterAction;
+
+    fn instruction_table(&self) -> &InstructionTable<Self::InterpreterTypes, Self::Context> {
+        &self.instruction_table
+    }
 }
 
 impl<WIRE, HOST> Clone for ScrollInstructions<WIRE, HOST>
