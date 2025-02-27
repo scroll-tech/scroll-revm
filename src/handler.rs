@@ -1,9 +1,9 @@
 //! Handler related to Scroll chain.
 
-use crate::{transaction::ScrollTxTr, L1BlockInfo, ScrollSpecId};
-use std::mem;
+use crate::{transaction::ScrollTxTr, ScrollSpecId};
+use core::mem;
 
-use primitives::Log;
+use crate::l1block::L1BlockInfo;
 use revm::{
     context::{
         result::{EVMError, FromStringError, HaltReason, InvalidTransaction, ResultAndState},
@@ -17,6 +17,7 @@ use revm::{
     primitives::{TxKind, U256},
     state::EvmState,
 };
+use revm_primitives::Log;
 
 /// The Scroll handler.
 pub struct ScrollHandler<EVM, ERROR, FRAME> {
@@ -63,7 +64,7 @@ where
             Journal: Journal<FinalOutput = (EvmState, Vec<Log>)>,
             Tx: ScrollTxTr,
             Cfg: Cfg<Spec = ScrollSpecId>,
-            Chain = Option<L1BlockInfo>,
+            Chain = L1BlockInfo,
         >,
     >,
     ERROR: EvmTrError<EVM> + FromStringError + IsTxError,
@@ -79,7 +80,7 @@ where
         if !evm.ctx().tx().is_l1_msg() {
             let spec = evm.ctx().cfg().spec();
             let l1_block_info = L1BlockInfo::try_fetch(&mut evm.ctx().db(), spec)?;
-            *evm.ctx().chain() = Some(l1_block_info);
+            *evm.ctx().chain() = l1_block_info;
         }
 
         self.mainnet.load_accounts(evm)
@@ -98,8 +99,7 @@ where
             // l1 cost, max values is already checked in pre_validate but l1 cost wasn't.
             pre_execution::deduct_caller(ctx)?;
 
-            let l1_block_info =
-                ctx.chain().as_ref().cloned().expect("L1BlockInfo should be loaded");
+            let l1_block_info = ctx.chain().clone();
             let Some(rlp_bytes) = ctx.tx().rlp_bytes() else {
                 return Err(ERROR::from_string(
                     "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
@@ -152,11 +152,7 @@ where
         let beneficiary = block.beneficiary();
 
         // calculate the L1 cost of the transaction.
-        let Some(l1_block_info) = ctx.chain().as_ref().cloned() else {
-            return Err(ERROR::from_string(
-                "[SCROLL] Failed to load L1 block information.".to_string(),
-            ));
-        };
+        let l1_block_info = ctx.chain().clone();
         let Some(rlp_bytes) = &ctx.tx().rlp_bytes() else {
             return Err(ERROR::from_string(
                 "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
