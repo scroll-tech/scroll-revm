@@ -1,5 +1,5 @@
-use primitives::{Address, Bytes, TxKind, B256, U256};
-use revm::context::Transaction;
+use revm::context::{Transaction, TxEnv};
+use revm_primitives::{Address, Bytes, TxKind, B256, U256};
 
 /// The type for a l1 message transaction.
 pub const L1_MESSAGE_TYPE: u8 = 0x7E;
@@ -16,18 +16,26 @@ pub trait ScrollTxTr: Transaction {
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
 /// the l1 fee computation.
-pub struct ScrollTx<T: Transaction> {
-    base: T,
-    rlp_bytes: Option<Bytes>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ScrollTransaction<T: Transaction> {
+    pub base: T,
+    pub rlp_bytes: Option<Bytes>,
 }
 
-impl<T: Transaction> ScrollTx<T> {
+impl<T: Transaction> ScrollTransaction<T> {
     pub fn new(base: T, rlp_bytes: Option<Bytes>) -> Self {
         Self { base, rlp_bytes }
     }
 }
 
-impl<T: Transaction> Transaction for ScrollTx<T> {
+impl Default for ScrollTransaction<TxEnv> {
+    fn default() -> Self {
+        Self { base: TxEnv::default(), rlp_bytes: None }
+    }
+}
+
+impl<T: Transaction> Transaction for ScrollTransaction<T> {
     type AccessList = T::AccessList;
     type Authorization = T::Authorization;
 
@@ -92,7 +100,7 @@ impl<T: Transaction> Transaction for ScrollTx<T> {
     }
 }
 
-impl<T: Transaction> ScrollTxTr for ScrollTx<T> {
+impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
     fn is_l1_msg(&self) -> bool {
         self.tx_type() == L1_MESSAGE_TYPE
     }

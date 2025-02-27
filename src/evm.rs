@@ -9,6 +9,7 @@ use revm::{
     interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction},
 };
 
+/// The Scroll Evm instance.
 pub struct ScrollEvm<
     CTX,
     INSP,
