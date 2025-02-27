@@ -1,17 +1,34 @@
 [package]
-name = "scroll-revm"
+name = "revm-scroll"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 # revm
 revm = { version = "20.0.0-alpha.1", default-features = false }
-primitives = { package = "revm-primitives", git = "https://github.com/bluealloy/revm.git", ref = "ca5b2fe15e0b9920ede13f1c67918b93bfdc12c2", default-features = false }
+revm-primitives = { version = "16.0.0-alpha.1", default-features = false }
+revm-inspector = { version = "1.0.0-alpha.1", default-features = false }
 
 # misc
 auto_impl = "1.2.0"
 enumn = { version = "0.1" }
 once_cell = { version = "1.19", default-features = false, features = ["alloc"] }
+serde = { version = "1.0", features = ["derive"], optional = true, default-features = false }
+
+[features]
+default = ["std", "c-kzg", "secp256k1", "portable", "blst"]
+std = ["serde?/std", "revm/std"]
+hashbrown = ["revm/hashbrown"]
+serde = ["dep:serde", "revm/serde"]
+portable = ["revm/portable"]
+
+# See comments in `revm-precompile`
+secp256k1 = ["revm/secp256k1"]
+c-kzg = ["revm/c-kzg"]
+# `kzg-rs` is not audited but useful for `no_std` environment, use it with causing and default to `c-kzg` if possible.
+kzg-rs = ["revm/kzg-rs"]
+blst = ["revm/blst"]
 
 [patch.crates-io]
 revm = { git = "https://github.com/bluealloy/revm", rev = "a8a9893b" }
+revm-primitives = { git = "https://github.com/bluealloy/revm", rev = "a8a9893b" }
