@@ -1,9 +1,8 @@
 //! Handler related to Scroll chain.
 
-use crate::{transaction::ScrollTxTr, ScrollSpecId};
+use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
 use core::mem;
 
-use crate::l1block::L1BlockInfo;
 use revm::{
     context::{
         result::{EVMError, FromStringError, HaltReason, InvalidTransaction, ResultAndState},

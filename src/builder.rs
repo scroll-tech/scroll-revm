@@ -3,6 +3,7 @@ use crate::{
     transaction::ScrollTxTr, ScrollSpecId, ScrollTransaction,
 };
 use alloc::vec::Vec;
+
 use revm::{
     context::{BlockEnv, Cfg, CfgEnv, TxEnv},
     context_interface::{Block, Journal},

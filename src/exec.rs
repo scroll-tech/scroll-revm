@@ -1,7 +1,9 @@
-use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollEvm, ScrollSpecId};
+use crate::{
+    handler::ScrollHandler, instructions::ScrollInstructions, l1block::L1BlockInfo,
+    transaction::ScrollTxTr, ScrollEvm, ScrollSpecId,
+};
 use alloc::vec::Vec;
 
-use crate::{handler::ScrollHandler, instructions::ScrollInstructions};
 use revm::{
     context::result::HaltReason,
     context_interface::{

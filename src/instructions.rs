@@ -7,10 +7,7 @@ use revm::{
     context::{Block, Cfg},
     handler::instructions::InstructionProvider,
     interpreter::{
-        as_u64_saturated, as_usize_or_fail, gas,
-        gas::warm_cold_cost,
-        gas_or_fail,
-        instructions::utility::IntoAddress,
+        as_u64_saturated, as_usize_or_fail, gas, gas_or_fail,
         interpreter_types::{InputsTr, LoopControl, MemoryTr, RuntimeFlag, StackTr},
         push, require_non_staticcall, resize_memory,
         table::{make_instruction_table, InstructionTable},
@@ -72,7 +69,6 @@ where
 /// The following instructions are overridden:
 /// - `BLOCKHASH`
 /// - `BASEFEE`
-/// - `EXTCODESIZE`
 /// - `TSTORE`
 /// - `TLOAD`
 /// - `SELFDESTRUCT`
@@ -84,7 +80,6 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollHost + 
     // override the instructions
     table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
     table[opcode::BASEFEE as usize] = basefee::<WIRE, HOST>;
-    table[opcode::EXTCODESIZE as usize] = extcodesize::<WIRE, HOST>;
     table[opcode::TSTORE as usize] = tstore::<WIRE, HOST>;
     table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
@@ -121,22 +116,6 @@ fn blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
         // blockhash requested for block in the history - return the hash
         _ => compute_block_hash(host.cfg().chain_id(), as_u64_saturated!(requested_block_number)),
     };
-}
-
-fn extcodesize<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
-    popn_top!([], top, interpreter);
-    let address = top.into_address();
-    let Some(code) = host.code(address) else {
-        interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
-        return;
-    };
-
-    gas!(interpreter, warm_cold_cost(code.is_cold));
-
-    push!(interpreter, U256::from(code.len()));
 }
 
 fn selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(

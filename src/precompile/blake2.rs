@@ -1,9 +1,9 @@
+use super::precompile_not_implemented;
+
 use revm::{
     precompile::{u64_to_address, PrecompileWithAddress},
     primitives::Address,
 };
-
-use super::precompile_not_implemented;
 
 // CONSTANTS
 // ================================================================================================
