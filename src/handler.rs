@@ -1,19 +1,18 @@
 //! Handler related to Scroll chain.
 
 use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
-use core::mem;
 
 use revm::{
     context::{
-        result::{EVMError, FromStringError, HaltReason, InvalidTransaction, ResultAndState},
+        result::{EVMError, FromStringError, HaltReason, InvalidTransaction},
         Block, Cfg, ContextTr, Journal, Transaction,
     },
     handler::{
         post_execution, pre_execution, EvmTr, EvmTrError, Frame, FrameResult, Handler,
         MainnetHandler,
     },
-    interpreter::FrameInput,
-    primitives::{TxKind, U256},
+    interpreter::{FrameInput, Gas},
+    primitives::U256,
     state::EvmState,
 };
 use revm_primitives::Log;
@@ -119,7 +118,7 @@ where
         } else {
             let caller_account = ctx.journal().load_account(caller)?;
             // bump the nonce for calls. Nonce for CREATE will be bumped in `handle_create`.
-            if matches!(kind, TxKind::Call(_)) {
+            if kind.is_call() {
                 // Nonce is already checked
                 caller_account.data.info.nonce = caller_account.data.info.nonce.saturating_add(1);
             }
@@ -130,6 +129,45 @@ where
         Ok(())
     }
 
+    fn last_frame_result(
+        &self,
+        evm: &mut Self::Evm,
+        frame_result: &mut <Self::Frame as Frame>::FrameResult,
+    ) -> Result<(), Self::Error> {
+        let instruction_result = frame_result.interpreter_result().result;
+        let gas = frame_result.gas_mut();
+        let remaining = gas.remaining();
+        let refunded = gas.refunded();
+
+        // Spend the gas limit. Gas is reimbursed when the tx returns successfully.
+        *gas = Gas::new_spent(evm.ctx().tx().gas_limit());
+
+        if instruction_result.is_ok_or_revert() {
+            gas.erase_cost(remaining);
+        }
+
+        // do not refund l1 messages.
+        if !evm.ctx().tx().is_l1_msg() && instruction_result.is_ok() {
+            gas.record_refund(refunded);
+        }
+
+        Ok(())
+    }
+
+    fn refund(
+        &self,
+        evm: &mut Self::Evm,
+        exec_result: &mut <Self::Frame as Frame>::FrameResult,
+        eip7702_refund: i64,
+    ) {
+        // skip refund for l1 messages
+        if evm.ctx().tx().is_l1_msg() {
+            return;
+        }
+        let spec = evm.ctx().cfg().spec().into();
+        post_execution::refund(spec, exec_result.gas_mut(), eip7702_refund)
+    }
+
     fn reward_beneficiary(
         &self,
         evm: &mut Self::Evm,
@@ -138,7 +176,7 @@ where
         let ctx = evm.ctx();
 
         // If the transaction is an L1 message, we do not need to reward the beneficiary as the
-        // transaction has already been payed for on L1.
+        // transaction has already been paid for on L1.
         if ctx.tx().is_l1_msg() {
             return Ok(());
         }
@@ -173,6 +211,7 @@ where
 
         Ok(())
     }
+}
 
     fn output(
         &self,
