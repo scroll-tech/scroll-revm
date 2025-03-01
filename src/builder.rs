@@ -2,7 +2,7 @@ use crate::{
     evm::ScrollEvm, instructions::ScrollInstructions, l1block::L1BlockInfo,
     transaction::ScrollTxTr, ScrollSpecId, ScrollTransaction,
 };
-use alloc::vec::Vec;
+use std::vec::Vec;
 
 use revm::{
     context::{BlockEnv, Cfg, CfgEnv, TxEnv},

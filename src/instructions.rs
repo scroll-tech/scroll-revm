@@ -1,7 +1,5 @@
 use crate::{popn, popn_top, ScrollSpecId};
-use alloc::rc::Rc;
 use core::cmp::max;
-
 use revm::{
     bytecode::opcode,
     context::{Block, Cfg},
@@ -15,6 +13,7 @@ use revm::{
     },
     primitives::{keccak256, BLOCK_HASH_HISTORY, U256},
 };
+use std::rc::Rc;
 
 /// A trait defining a Host using the [`ScrollSpecId`] as spec.
 pub trait ScrollHost: Host<Cfg: Cfg<Spec = ScrollSpecId>> {}

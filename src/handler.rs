@@ -1,6 +1,7 @@
 //! Handler related to Scroll chain.
 
 use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
+use std::{string::ToString, vec::Vec};
 
 use revm::{
     context::{
@@ -255,14 +256,14 @@ mod tests {
                     L1_GAS_PRICE_ORACLE_ADDRESS,
                     (0..7)
                         .map(|n| (U256::from(n), U256::from(1)))
-                        .chain(std::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
+                        .chain(core::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
                         .collect(),
                 );
             })
     }
 
     #[test]
-    fn test_load_account() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -275,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_account_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_load_account_l1_message() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -288,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deduct_caller() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_db_chained(|db| {
             db.accounts.insert(
                 CALLER,
@@ -315,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deduct_caller_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_deduct_caller_l1_message() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
         let mut evm = ctx.build_scroll();
@@ -331,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_last_frame_result() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_last_frame_result() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
@@ -355,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn test_last_frame_result_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_last_frame_result_l1_message() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
         let mut evm = ctx.build_scroll();
@@ -379,7 +380,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_refund() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_refund() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
@@ -404,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn test_refund_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_refund_l1_message() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
         let mut evm = ctx.build_scroll();
@@ -429,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reward_beneficiary() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
@@ -453,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
         let mut evm = ctx.build_scroll();
