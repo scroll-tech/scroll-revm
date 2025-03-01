@@ -254,7 +254,6 @@ mod tests {
                 let _ = db.replace_account_storage(
                     L1_GAS_PRICE_ORACLE_ADDRESS,
                     (0..7)
-                        .into_iter()
                         .map(|n| (U256::from(n), U256::from(1)))
                         .chain(std::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
                         .collect(),
@@ -344,7 +343,7 @@ mod tests {
             InterpreterResult {
                 result: InstructionResult::Return,
                 output: Default::default(),
-                gas: gas.clone(),
+                gas,
             },
             0..0,
         ));
@@ -368,7 +367,7 @@ mod tests {
             InterpreterResult {
                 result: InstructionResult::Return,
                 output: Default::default(),
-                gas: gas.clone(),
+                gas,
             },
             0..0,
         ));
@@ -392,7 +391,7 @@ mod tests {
             InterpreterResult {
                 result: InstructionResult::Return,
                 output: Default::default(),
-                gas: gas.clone(),
+                gas,
             },
             0..0,
         ));
@@ -417,7 +416,7 @@ mod tests {
             InterpreterResult {
                 result: InstructionResult::Return,
                 output: Default::default(),
-                gas: gas.clone(),
+                gas,
             },
             0..0,
         ));
