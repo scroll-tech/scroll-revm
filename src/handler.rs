@@ -213,22 +213,267 @@ where
     }
 }
 
-    fn output(
-        &self,
-        evm: &mut Self::Evm,
-        mut result: <Self::Frame as Frame>::FrameResult,
-    ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        let ctx = evm.ctx();
-        mem::replace(ctx.error(), Ok(()))?;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        builder::{DefaultScrollContext, ScrollBuilder, ScrollContext},
+        l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
+        transaction::L1_MESSAGE_TYPE,
+    };
 
-        // l1 messages do not get gas refunded.
-        if ctx.tx().is_l1_msg() {
-            let refund = result.gas().refunded();
-            let spent = result.gas().spent();
-            result.gas_mut().set_refund(0);
-            result.gas_mut().set_spent(spent + refund as u64);
-        }
+    use revm::{
+        database::{DbAccount, InMemoryDB},
+        handler::EthFrame,
+        interpreter::{CallOutcome, InstructionResult, InterpreterResult},
+        state::AccountInfo,
+        Context,
+    };
+    use revm_primitives::{address, bytes, Address};
 
-        Ok(post_execution::output(ctx, result))
+    const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
+    const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
+    const TO: Address = address!("0x0000000000000000000000000000000000000001");
+    const BENEFICIARY: Address = address!("0x0000000000000000000000000000000000000002");
+    const MIN_TRANSACTION_COST: U256 = U256::from_limbs([21_000u64, 0, 0, 0]);
+    const L1_DATA_COST: U256 = U256::from_limbs([4u64, 0, 0, 0]);
+
+    fn context() -> ScrollContext<InMemoryDB> {
+        Context::scroll()
+            .modify_tx_chained(|tx| {
+                tx.base.caller = CALLER;
+                tx.base.kind = Some(TO).into();
+                tx.base.gas_price = 1;
+                tx.base.gas_limit = 21000;
+                tx.base.gas_priority_fee = None;
+                tx.rlp_bytes = Some(bytes!("01010101"));
+            })
+            .modify_block_chained(|block| block.beneficiary = BENEFICIARY)
+            .with_db(InMemoryDB::default())
+            .modify_db_chained(|db| {
+                let _ = db.replace_account_storage(
+                    L1_GAS_PRICE_ORACLE_ADDRESS,
+                    (0..7)
+                        .into_iter()
+                        .map(|n| (U256::from(n), U256::from(1)))
+                        .chain(std::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
+                        .collect(),
+                );
+            })
+    }
+
+    #[test]
+    fn test_load_account() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context();
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.load_accounts(&mut evm)?;
+
+        let l1_block_info = evm.ctx().chain.clone();
+        assert_ne!(l1_block_info, L1BlockInfo::default());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_account_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.load_accounts(&mut evm)?;
+
+        let l1_block_info = evm.ctx().chain.clone();
+        assert_eq!(l1_block_info, L1BlockInfo::default());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deduct_caller() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_db_chained(|db| {
+            db.accounts.insert(
+                CALLER,
+                DbAccount {
+                    info: AccountInfo {
+                        balance: MIN_TRANSACTION_COST + L1_DATA_COST,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+        });
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.load_accounts(&mut evm)?;
+        handler.deduct_caller(&mut evm)?;
+
+        let caller_account = evm.ctx().journal().load_account(CALLER)?;
+        assert_eq!(caller_account.info.balance, U256::ZERO);
+        assert_eq!(caller_account.info.nonce, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deduct_caller_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.load_accounts(&mut evm)?;
+        handler.deduct_caller(&mut evm)?;
+
+        let caller_account = evm.ctx().journal().load_account(CALLER)?;
+        assert_eq!(caller_account.info.balance, U256::ZERO);
+        assert_eq!(caller_account.info.nonce, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_last_frame_result() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context();
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut gas = Gas::new(21000);
+        gas.set_refund(10);
+        gas.set_spent(10);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas: gas.clone(),
+            },
+            0..0,
+        ));
+        handler.last_frame_result(&mut evm, &mut result)?;
+
+        assert_eq!(result.gas(), &gas);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_last_frame_result_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut gas = Gas::new(21000);
+        gas.set_refund(10);
+        gas.set_spent(10);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas: gas.clone(),
+            },
+            0..0,
+        ));
+        handler.last_frame_result(&mut evm, &mut result)?;
+
+        gas.set_refund(0);
+        assert_eq!(result.gas(), &gas);
+
+        Ok(())
+    }
+    #[test]
+    fn test_refund() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context();
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut gas = Gas::new(21000);
+        gas.set_refund(10);
+        gas.set_spent(10);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas: gas.clone(),
+            },
+            0..0,
+        ));
+        handler.refund(&mut evm, &mut result, 0);
+
+        gas.set_refund(2);
+        assert_eq!(result.gas(), &gas);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_refund_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut gas = Gas::new(21000);
+        gas.set_refund(10);
+        gas.set_spent(10);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas: gas.clone(),
+            },
+            0..0,
+        ));
+        handler.refund(&mut evm, &mut result, 0);
+
+        // gas should not have been updated
+        assert_eq!(result.gas(), &gas);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reward_beneficiary() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context();
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let gas = Gas::new_spent(21000);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas,
+            },
+            0..0,
+        ));
+        handler.load_accounts(&mut evm)?;
+        handler.reward_beneficiary(&mut evm, &mut result)?;
+
+        let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
+        assert_eq!(beneficiary.info.balance, MIN_TRANSACTION_COST + L1_DATA_COST);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn std::error::Error>> {
+        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let gas = Gas::new_spent(21000);
+        let mut result = FrameResult::Call(CallOutcome::new(
+            InterpreterResult {
+                result: InstructionResult::Return,
+                output: Default::default(),
+                gas,
+            },
+            0..0,
+        ));
+        handler.load_accounts(&mut evm)?;
+        handler.reward_beneficiary(&mut evm, &mut result)?;
+
+        let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
+        assert_eq!(beneficiary.info.balance, U256::ZERO);
+
+        Ok(())
     }
 }
