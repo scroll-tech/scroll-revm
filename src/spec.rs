@@ -1,55 +1,4 @@
-use crate::{env::TxEnv, handle_register::scroll_handle_register, ScrollContext};
-use core::marker::PhantomData;
-use revm::{
-    database_interface::Database,
-    handler::register::HandleRegisters,
-    precompile::PrecompileSpecId,
-    specification::hardfork::{Spec, SpecId},
-    wiring::{default::block::BlockEnv, result::HaltReason, EvmWiring},
-    EvmHandler,
-};
-
-use crate::l1block::L1BlockInfo;
-
-pub struct ScrollEvmWiring<DB: Database, EXT> {
-    _phantom: PhantomData<(DB, EXT)>,
-}
-
-impl<DB: Database, EXT> EvmWiring for ScrollEvmWiring<DB, EXT> {
-    type Block = BlockEnv;
-    type Database = DB;
-    type ChainContext = Context;
-    type ExternalContext = EXT;
-    type Hardfork = ScrollSpecId;
-    type HaltReason = HaltReason;
-    type Transaction = TxEnv;
-}
-
-impl<DB: Database, EXT> revm::EvmWiring for ScrollEvmWiring<DB, EXT> {
-    fn handler<'evm>(hardfork: Self::Hardfork) -> revm::EvmHandler<'evm, Self> {
-        let mut handler = EvmHandler::mainnet_with_spec(hardfork);
-
-        handler.append_handler_register(HandleRegisters::Plain(scroll_handle_register::<Self>));
-
-        handler
-    }
-}
-
-/// Context for the Scroll chain.
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct Context {
-    l1_block_info: Option<L1BlockInfo>,
-}
-
-impl ScrollContext for Context {
-    fn l1_block_info(&self) -> Option<&L1BlockInfo> {
-        self.l1_block_info.as_ref()
-    }
-
-    fn l1_block_info_mut(&mut self) -> &mut Option<L1BlockInfo> {
-        &mut self.l1_block_info
-    }
-}
+use revm::specification::hardfork::SpecId;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, enumn::N)]
@@ -58,9 +7,8 @@ pub enum ScrollSpecId {
     SHANGHAI = 1,
     BERNOULLI = 2,
     CURIE = 3,
-    DARWIN = 4,
     #[default]
-    LATEST = u8::MAX,
+    DARWIN = 4,
 }
 
 impl ScrollSpecId {
@@ -85,9 +33,7 @@ impl ScrollSpecId {
     /// Converts the `ScrollSpecId` to a `SpecId`.
     const fn into_eth_spec_id(self) -> SpecId {
         match self {
-            Self::SHANGHAI | Self::BERNOULLI => SpecId::SHANGHAI,
-            Self::CURIE | Self::DARWIN => SpecId::CANCUN,
-            Self::LATEST => SpecId::CANCUN,
+            Self::SHANGHAI | Self::BERNOULLI | Self::CURIE | Self::DARWIN => SpecId::SHANGHAI,
         }
     }
 }
@@ -98,16 +44,10 @@ impl From<ScrollSpecId> for SpecId {
     }
 }
 
-impl From<ScrollSpecId> for PrecompileSpecId {
-    fn from(value: ScrollSpecId) -> Self {
-        PrecompileSpecId::from_spec_id(value.into_eth_spec_id())
-    }
-}
-
 /// String identifiers for the Scroll hardforks.
-pub mod id {
+pub mod name {
     // Re-export the Ethereum hardforks.
-    pub use revm::specification::hardfork::id::{LATEST, SHANGHAI};
+    pub use revm::specification::hardfork::name::{LATEST, SHANGHAI};
 
     pub const BERNOULLI: &str = "bernoulli";
     pub const CURIE: &str = "curie";
@@ -117,11 +57,11 @@ pub mod id {
 impl From<&str> for ScrollSpecId {
     fn from(name: &str) -> Self {
         match name {
-            id::SHANGHAI => Self::SHANGHAI,
-            id::BERNOULLI => Self::BERNOULLI,
-            id::CURIE => Self::CURIE,
-            id::DARWIN => Self::DARWIN,
-            _ => Self::LATEST,
+            name::SHANGHAI => Self::SHANGHAI,
+            name::BERNOULLI => Self::BERNOULLI,
+            name::CURIE => Self::CURIE,
+            name::DARWIN => Self::DARWIN,
+            _ => Self::default(),
         }
     }
 }
@@ -129,67 +69,10 @@ impl From<&str> for ScrollSpecId {
 impl From<ScrollSpecId> for &'static str {
     fn from(value: ScrollSpecId) -> Self {
         match value {
-            ScrollSpecId::SHANGHAI => id::SHANGHAI,
-            ScrollSpecId::BERNOULLI => id::BERNOULLI,
-            ScrollSpecId::CURIE => id::CURIE,
-            ScrollSpecId::DARWIN => id::DARWIN,
-            ScrollSpecId::LATEST => id::LATEST,
+            ScrollSpecId::SHANGHAI => name::SHANGHAI,
+            ScrollSpecId::BERNOULLI => name::BERNOULLI,
+            ScrollSpecId::CURIE => name::CURIE,
+            ScrollSpecId::DARWIN => name::DARWIN,
         }
     }
-}
-
-pub trait ScrollSpec: Spec + Sized + 'static {
-    /// The specification ID for scroll.
-    const SCROLL_SPEC_ID: ScrollSpecId;
-
-    /// Returns whether the provided `ScrollSpecId` is enabled by this spec.
-    #[inline]
-    fn scroll_enabled(spec_id: ScrollSpecId) -> bool {
-        ScrollSpecId::enabled(Self::SCROLL_SPEC_ID, spec_id)
-    }
-}
-
-macro_rules! spec {
-    ($spec_id:ident, $spec_name:ident) => {
-        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $spec_name;
-
-        impl ScrollSpec for $spec_name {
-            const SCROLL_SPEC_ID: ScrollSpecId = ScrollSpecId::$spec_id;
-        }
-
-        impl Spec for $spec_name {
-            const SPEC_ID: SpecId = $spec_name::SCROLL_SPEC_ID.into_eth_spec_id();
-        }
-    };
-}
-
-spec!(SHANGHAI, ShanghaiSpec);
-spec!(BERNOULLI, BernoulliSpec);
-spec!(CURIE, CurieSpec);
-// DARWIN no EVM spec change
-spec!(LATEST, LatestSpec);
-
-#[macro_export]
-macro_rules! scroll_spec_to_generic {
-    ($spec_id:expr, $e:expr) => {{
-        match $spec_id {
-            $crate::ScrollSpecId::SHANGHAI => {
-                use $crate::ShanghaiSpec as SPEC;
-                $e
-            }
-            $crate::ScrollSpecId::BERNOULLI => {
-                use $crate::BernoulliSpec as SPEC;
-                $e
-            }
-            $crate::ScrollSpecId::CURIE | $crate::ScrollSpecId::DARWIN => {
-                use $crate::CurieSpec as SPEC;
-                $e
-            }
-            $crate::ScrollSpecId::LATEST => {
-                use $crate::LatestSpec as SPEC;
-                $e
-            }
-        }
-    }};
 }

@@ -4,7 +4,7 @@ use revm::{
             pair::{ISTANBUL_PAIR_BASE, ISTANBUL_PAIR_PER_POINT},
             run_pair,
         },
-        u64_to_address, Precompile, PrecompileError, PrecompileResult, PrecompileWithAddress,
+        u64_to_address, PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
     primitives::{Address, Bytes},
 };
@@ -23,7 +23,8 @@ pub mod pair {
         u64_to_address(BN128_PAIRING_PRECOMPILE_INDEX);
 
     /// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
-    /// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of inputs.
+    /// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of
+    /// inputs.
     const N_PAIRING_PER_OP: usize = 4;
 
     /// The number of bytes taken to represent a pair (G1, G2).
@@ -33,26 +34,20 @@ pub mod pair {
     // --------------------------------------------------------------------------------------------
 
     /// The BN128 PAIRING precompile with address.
-    pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(
-        BN128_PAIRING_PRECOMPILE_ADDRESS,
-        Precompile::Standard(bernoulli_run),
-    );
+    pub const BERNOULLI: PrecompileWithAddress =
+        PrecompileWithAddress(BN128_PAIRING_PRECOMPILE_ADDRESS, bernoulli_run);
 
     /// The bernoulli BN128 PAIRING precompile implementation.
     ///
     /// # Errors
-    /// - `PrecompileError::Other("BN128PairingInputOverflow: input overflow".into())` if the input length is greater than 768 bytes.
+    /// - `PrecompileError::Other("BN128PairingInputOverflow: input overflow".into())` if the input
+    ///   length is greater than 768 bytes.
     fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
         if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
             return Err(
-                PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()).into(),
+                PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()).into()
             );
         }
-        run_pair(
-            input,
-            ISTANBUL_PAIR_PER_POINT,
-            ISTANBUL_PAIR_BASE,
-            gas_limit,
-        )
+        run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
     }
 }

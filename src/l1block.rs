@@ -1,7 +1,9 @@
-use revm::primitives::{address, Address, U256};
-use revm::Database;
-
 use crate::ScrollSpecId;
+
+use revm::{
+    primitives::{address, Address, U256},
+    Database,
+};
 
 // CONSTANTS
 // ================================================================================================
@@ -45,7 +47,8 @@ const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 
 /// A struct that holds the L1 block information.
 ///
-/// This struct is used to calculate the gas cost of a transaction based on L1 block data posted on L2.
+/// This struct is used to calculate the gas cost of a transaction based on L1 block data posted on
+/// L2.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct L1BlockInfo {
     /// The current L1 base fee.
@@ -105,24 +108,16 @@ impl L1BlockInfo {
     pub fn data_gas(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
         if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             U256::from(input.iter().fold(0, |acc, byte| {
-                acc + if *byte == 0x00 {
-                    ZERO_BYTE_COST
-                } else {
-                    NON_ZERO_BYTE_COST
-                }
+                acc + if *byte == 0x00 { ZERO_BYTE_COST } else { NON_ZERO_BYTE_COST }
             }))
             .saturating_add(self.l1_fee_overhead)
             .saturating_add(TX_L1_COMMIT_EXTRA_COST)
         } else {
             U256::from(input.len())
                 .saturating_mul(
-                    self.l1_blob_base_fee
-                        .expect("l1_blob_base_fee should be set in Curie"),
+                    self.l1_blob_base_fee.expect("l1_blob_base_fee should be set in Curie"),
                 )
-                .saturating_mul(
-                    self.l1_blob_scalar
-                        .expect("l1_blob_scalar should be set in Curie"),
-                )
+                .saturating_mul(self.l1_blob_scalar.expect("l1_blob_scalar should be set in Curie"))
         }
     }
 
@@ -138,10 +133,7 @@ impl L1BlockInfo {
         // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee"
         let blob_gas = self.data_gas(input, spec_id);
 
-        self.calldata_gas
-            .unwrap()
-            .saturating_add(blob_gas)
-            .wrapping_div(TX_L1_FEE_PRECISION)
+        self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION)
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.

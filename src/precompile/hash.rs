@@ -1,6 +1,7 @@
 use super::precompile_not_implemented;
+
 use revm::{
-    precompile::{hash::sha256_run, u64_to_address, Precompile, PrecompileWithAddress},
+    precompile::{hash::sha256_run, u64_to_address, PrecompileWithAddress},
     primitives::Address,
 };
 
@@ -28,7 +29,7 @@ pub mod sha256 {
 
     /// The bernoulli SHA256 precompile implementation with address.
     pub const SHA256_BERNOULLI: PrecompileWithAddress =
-        PrecompileWithAddress(SHA256_PRECOMPILE_ADDRESS, Precompile::Standard(sha256_run));
+        PrecompileWithAddress(SHA256_PRECOMPILE_ADDRESS, sha256_run);
 }
 
 pub mod ripemd160 {
@@ -48,7 +49,8 @@ pub mod ripemd160 {
 
     /// The shanghai RIPEMD160 precompile implementation with address.
     ///
-    /// This precompile is not implemented and will return `PrecompileError::Other("Precompile not implemented".into())`.
+    /// This precompile is not implemented and will return `PrecompileError::Other("Precompile not
+    /// implemented".into())`.
     pub const RIPEMD160_SHANGHAI: PrecompileWithAddress =
         precompile_not_implemented(RIPEMD160_PRECOMPILE_ADDRESS);
 }
