@@ -4,7 +4,7 @@ use crate::{
 };
 
 use revm::{
-    context::{setters::ContextSetters, ContextTr, Evm, EvmData},
+    context::{setters::ContextSetters, Cfg, ContextTr, Evm, EvmData},
     handler::{instructions::InstructionProvider, EvmTr},
     interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction},
 };
@@ -21,10 +21,11 @@ impl<CTX: ScrollHost, INSP>
     ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, ScrollPrecompileProvider<CTX>>
 {
     pub fn new(ctx: CTX, inspector: INSP) -> Self {
+        let spec = ctx.cfg().spec();
         Self(Evm {
             data: EvmData { ctx, inspector },
             instruction: ScrollInstructions::new_mainnet(),
-            precompiles: ScrollPrecompileProvider::default(),
+            precompiles: ScrollPrecompileProvider::new_with_spec(spec),
         })
     }
 }

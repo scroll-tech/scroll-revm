@@ -38,7 +38,11 @@ impl<CTX> ScrollPrecompileProvider<CTX> {
 
     #[inline]
     pub fn new_with_spec(spec: ScrollSpecId) -> Self {
-        Self::new(load_precompiles(spec))
+        let precompiles = match spec {
+            ScrollSpecId::SHANGHAI => pre_bernoulli(),
+            ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
+        };
+        Self::new(precompiles)
     }
 }
 
@@ -50,8 +54,8 @@ const fn precompile_not_implemented(address: Address) -> PrecompileWithAddress {
     })
 }
 
-/// Load the precompiles for the given scroll spec.
-pub fn load_precompiles(spec_id: ScrollSpecId) -> &'static Precompiles {
+/// Returns precompiles for Pre-Bernoulli spec.
+pub(crate) fn pre_bernoulli() -> &'static Precompiles {
     static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = Precompiles::default();
@@ -68,10 +72,16 @@ pub fn load_precompiles(spec_id: ScrollSpecId) -> &'static Precompiles {
             blake2::SHANGHAI,
         ]);
 
-        if spec_id.is_enabled_in(ScrollSpecId::BERNOULLI) {
-            precompiles.extend([hash::sha256::SHA256_BERNOULLI]);
-        }
+        Box::new(precompiles)
+    })
+}
 
+/// Returns precompiles for Bernoulli spec.
+pub(crate) fn bernoulli() -> &'static Precompiles {
+    static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
+    INSTANCE.get_or_init(|| {
+        let mut precompiles = pre_bernoulli().clone();
+        precompiles.extend([hash::sha256::SHA256_BERNOULLI]);
         Box::new(precompiles)
     })
 }
