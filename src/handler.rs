@@ -52,8 +52,6 @@ impl<DB, TX> IsTxError for EVMError<DB, TX> {
 ///   it can be used to calculate the L1 cost of a transaction.
 /// - `pre_execution.deduct_caller` - Overrides the logic to deduct the max transaction fee,
 ///   including the L1 fee, from the caller's balance.
-/// - `pre_execution.load_precompiles` - Overrides the logic to load the precompiles for the Scroll
-///   chain.
 /// - `post_execution.reward_beneficiary` - Overrides the logic to reward the beneficiary with the
 ///   gas fee.
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
