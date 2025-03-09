@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn test_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().modify_db_chained(|db| {
-            db.accounts.insert(
+            db.cache.accounts.insert(
                 CALLER,
                 DbAccount {
                     info: AccountInfo {

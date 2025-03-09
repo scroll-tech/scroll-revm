@@ -31,5 +31,6 @@ kzg-rs = ["revm/kzg-rs"]
 blst = ["revm/blst"]
 
 [patch.crates-io]
-revm = { git = "https://github.com/bluealloy/revm", rev = "a8a9893b" }
-revm-primitives = { git = "https://github.com/bluealloy/revm", rev = "a8a9893b" }
+revm = { git = "https://github.com/bluealloy/revm", rev = "19a5f3b" }
+revm-primitives = { git = "https://github.com/bluealloy/revm", rev = "19a5f3b" }
+revm-inspector = { git = "https://github.com/bluealloy/revm", rev = "19a5f3b" }
