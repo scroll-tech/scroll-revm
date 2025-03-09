@@ -44,9 +44,7 @@ pub mod pair {
     ///   length is greater than 768 bytes.
     fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
         if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
-            return Err(
-                PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()).into()
-            );
+            return Err(PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()));
         }
         run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
     }
