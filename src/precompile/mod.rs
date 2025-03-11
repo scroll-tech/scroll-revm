@@ -6,7 +6,7 @@ use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::InterpreterResult,
-    precompile::{self, PrecompileError, PrecompileErrors, PrecompileWithAddress, Precompiles},
+    precompile::{self, PrecompileError, PrecompileWithAddress, Precompiles},
     primitives::{Address, Bytes},
 };
 
@@ -50,7 +50,7 @@ impl<CTX> ScrollPrecompileProvider<CTX> {
 /// implemented".into())` for a given address.
 const fn precompile_not_implemented(address: Address) -> PrecompileWithAddress {
     PrecompileWithAddress(address, |_input: &Bytes, _gas_limit: u64| {
-        Err(PrecompileError::Other("NotImplemented: Precompile not implemented".into()).into())
+        Err(PrecompileError::Other("NotImplemented: Precompile not implemented".into()))
     })
 }
 
@@ -105,7 +105,7 @@ where
         address: &Address,
         bytes: &Bytes,
         gas_limit: u64,
-    ) -> Result<Option<Self::Output>, PrecompileErrors> {
+    ) -> Result<Option<Self::Output>, PrecompileError> {
         self.precompile_provider.run(context, address, bytes, gas_limit)
     }
 

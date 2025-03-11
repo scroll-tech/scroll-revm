@@ -43,13 +43,13 @@ fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
 
     // modexp temporarily only accepts inputs of 32 bytes (256 bits) or less
     if base_len > SCROLL_LEN_LIMIT {
-        return Err(PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into()).into());
+        return Err(PrecompileError::Other("ModexpBaseOverflow: modexp base overflow".into()));
     }
     if exp_len > SCROLL_LEN_LIMIT {
-        return Err(PrecompileError::Other("ModexpExpOverflow: modexp exp overflow".into()).into());
+        return Err(PrecompileError::Other("ModexpExpOverflow: modexp exp overflow".into()));
     }
     if mod_len > SCROLL_LEN_LIMIT {
-        return Err(PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into()).into());
+        return Err(PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into()));
     }
 
     run_inner(input, gas_limit, 200, berlin_gas_calc)
