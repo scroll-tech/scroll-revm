@@ -2,79 +2,89 @@ use crate::{
     handler::ScrollHandler, instructions::ScrollInstructions, l1block::L1BlockInfo,
     transaction::ScrollTxTr, ScrollEvm, ScrollSpecId,
 };
-use std::vec::Vec;
 
 use revm::{
-    context::result::HaltReason,
+    context::{result::HaltReason, ContextSetters, JournalOutput, JournalTr},
     context_interface::{
         result::{EVMError, ExecutionResult, ResultAndState},
-        Block, Cfg, ContextTr, Database, Journal,
+        Cfg, ContextTr, Database,
     },
-    handler::{handler::EvmTr, EthFrame, Handler},
-    interpreter::interpreter::EthInterpreter,
-    state::EvmState,
-    Context, DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
+    handler::{EthFrame, EvmTr, Handler, PrecompileProvider},
+    interpreter::{interpreter::EthInterpreter, InterpreterResult},
+    DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
 };
-use revm_inspector::{InspectCommitEvm, InspectEvm, Inspector, JournalExt};
-use revm_primitives::Log;
+use revm_inspector::{InspectCommitEvm, InspectEvm, Inspector, InspectorHandler, JournalExt};
 
-impl<BLOCK, TX, CFG, DB, JOURNAL, INSP> ExecuteEvm
-    for ScrollEvm<
-        Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>,
-        INSP,
-        ScrollInstructions<EthInterpreter, Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>>,
-    >
-where
-    BLOCK: Block,
-    TX: ScrollTxTr,
-    CFG: Cfg<Spec = ScrollSpecId>,
-    DB: Database,
-    JOURNAL: Journal<Database = DB, FinalOutput = (EvmState, Vec<Log>)>,
+pub trait ScrollContextTr:
+    ContextTr<
+    Journal: JournalTr<FinalOutput = JournalOutput>,
+    Tx: ScrollTxTr,
+    Cfg: Cfg<Spec = ScrollSpecId>,
+    Chain = L1BlockInfo,
+>
 {
-    type Output = Result<ResultAndState<HaltReason>, EVMError<<DB as Database>::Error>>;
+}
 
-    fn transact_previous(&mut self) -> Self::Output {
+impl<T> ScrollContextTr for T where
+    T: ContextTr<
+        Journal: JournalTr<FinalOutput = JournalOutput>,
+        Tx: ScrollTxTr,
+        Cfg: Cfg<Spec = ScrollSpecId>,
+        Chain = L1BlockInfo,
+    >
+{
+}
+
+impl<CTX, INSP, PRECOMPILE> ExecuteEvm
+    for ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, PRECOMPILE>
+where
+    CTX: ScrollContextTr + ContextSetters,
+    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
+{
+    type Output =
+        Result<ResultAndState<HaltReason>, EVMError<<<CTX as ContextTr>::Db as Database>::Error>>;
+
+    type Tx = <CTX as ContextTr>::Tx;
+
+    type Block = <CTX as ContextTr>::Block;
+
+    fn set_tx(&mut self, tx: Self::Tx) {
+        self.0.data.ctx.set_tx(tx);
+    }
+
+    fn set_block(&mut self, block: Self::Block) {
+        self.0.data.ctx.set_block(block);
+    }
+
+    fn replay(&mut self) -> Self::Output {
         let mut h = ScrollHandler::<_, _, EthFrame<_, _, _>>::new();
         h.run(self)
     }
 }
 
-impl<BLOCK, TX, CFG, DB, JOURNAL, INSP> ExecuteCommitEvm
-    for ScrollEvm<
-        Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>,
-        INSP,
-        ScrollInstructions<EthInterpreter, Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>>,
-    >
+impl<CTX, INSP, PRECOMPILE> ExecuteCommitEvm
+    for ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
-    BLOCK: Block,
-    TX: ScrollTxTr,
-    CFG: Cfg<Spec = ScrollSpecId>,
-    DB: Database + DatabaseCommit,
-    JOURNAL: Journal<Database = DB, FinalOutput = (EvmState, Vec<Log>)> + JournalExt,
+    CTX: ScrollContextTr<Db: DatabaseCommit> + ContextSetters,
+    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    type CommitOutput = Result<ExecutionResult<HaltReason>, EVMError<<DB as Database>::Error>>;
+    type CommitOutput =
+        Result<ExecutionResult<HaltReason>, EVMError<<<CTX as ContextTr>::Db as Database>::Error>>;
 
-    fn transact_commit_previous(&mut self) -> Self::CommitOutput {
-        self.transact_previous().map(|r| {
+    fn replay_commit(&mut self) -> Self::CommitOutput {
+        self.replay().map(|r| {
             self.ctx().db().commit(r.state);
             r.result
         })
     }
 }
 
-impl<BLOCK, TX, CFG, DB, JOURNAL, INSP> InspectEvm
-    for ScrollEvm<
-        Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>,
-        INSP,
-        ScrollInstructions<EthInterpreter, Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>>,
-    >
+impl<CTX, INSP, PRECOMPILE> InspectEvm
+    for ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
-    BLOCK: Block,
-    TX: ScrollTxTr,
-    CFG: Cfg<Spec = ScrollSpecId>,
-    DB: Database,
-    JOURNAL: Journal<Database = DB, FinalOutput = (EvmState, Vec<Log>)> + JournalExt,
-    INSP: Inspector<Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>, EthInterpreter>,
+    CTX: ScrollContextTr<Journal: JournalExt> + ContextSetters,
+    INSP: Inspector<CTX, EthInterpreter>,
+    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
     type Inspector = INSP;
 
@@ -82,28 +92,21 @@ where
         self.0.data.inspector = inspector;
     }
 
-    fn inspect_previous(&mut self) -> Self::Output {
+    fn inspect_replay(&mut self) -> Self::Output {
         let mut h = ScrollHandler::<_, _, EthFrame<_, _, _>>::new();
-        h.run(self)
+        h.inspect_run(self)
     }
 }
 
-impl<BLOCK, TX, CFG, DB, JOURNAL, INSP> InspectCommitEvm
-    for ScrollEvm<
-        Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>,
-        INSP,
-        ScrollInstructions<EthInterpreter, Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>>,
-    >
+impl<CTX, INSP, PRECOMPILE> InspectCommitEvm
+    for ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
-    BLOCK: Block,
-    TX: ScrollTxTr,
-    CFG: Cfg<Spec = ScrollSpecId>,
-    DB: Database + DatabaseCommit,
-    JOURNAL: Journal<Database = DB, FinalOutput = (EvmState, Vec<Log>)> + JournalExt,
-    INSP: Inspector<Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>, EthInterpreter>,
+    CTX: ScrollContextTr<Journal: JournalExt, Db: DatabaseCommit> + ContextSetters,
+    INSP: Inspector<CTX, EthInterpreter>,
+    PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
     fn inspect_commit_previous(&mut self) -> Self::CommitOutput {
-        self.inspect_previous().map(|r| {
+        self.inspect_replay().map(|r| {
             self.ctx().db().commit(r.state);
             r.result
         })

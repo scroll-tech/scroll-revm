@@ -1,23 +1,18 @@
-use crate::{popn, popn_top, ScrollSpecId};
+use crate::{exec::ScrollContextTr, ScrollSpecId};
 use core::cmp::max;
 use revm::{
     bytecode::opcode,
-    context::{Block, Cfg},
+    context::Cfg,
     handler::instructions::InstructionProvider,
     interpreter::{
-        as_u64_saturated, as_usize_or_fail, gas, gas_or_fail,
+        as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
         interpreter_types::{InputsTr, LoopControl, MemoryTr, RuntimeFlag, StackTr},
-        push, require_non_staticcall, resize_memory,
-        table::{make_instruction_table, InstructionTable},
-        Host, InstructionResult, Interpreter, InterpreterAction, InterpreterTypes,
+        popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionResult,
+        InstructionTable, Interpreter, InterpreterTypes,
     },
     primitives::{keccak256, BLOCK_HASH_HISTORY, U256},
 };
 use std::rc::Rc;
-
-/// A trait defining a Host using the [`ScrollSpecId`] as spec.
-pub trait ScrollHost: Host<Cfg: Cfg<Spec = ScrollSpecId>> {}
-impl<T> ScrollHost for T where T: Host<Cfg: Cfg<Spec = ScrollSpecId>> {}
 
 /// Holds the EVM instruction table for Scroll.
 pub struct ScrollInstructions<WIRE: InterpreterTypes, HOST> {
@@ -31,9 +26,6 @@ where
 {
     type InterpreterTypes = IT;
     type Context = CTX;
-    /// TODO Interpreter action could be tied to InterpreterTypes so we can
-    /// set custom actions from instructions.
-    type Output = InterpreterAction;
 
     fn instruction_table(&self) -> &InstructionTable<Self::InterpreterTypes, Self::Context> {
         &self.instruction_table
@@ -52,7 +44,7 @@ where
 impl<WIRE, HOST> ScrollInstructions<WIRE, HOST>
 where
     WIRE: InterpreterTypes,
-    HOST: ScrollHost,
+    HOST: ScrollContextTr,
 {
     pub fn new_mainnet() -> Self {
         Self::new(make_scroll_instruction_table::<WIRE, HOST>())
@@ -72,9 +64,9 @@ where
 /// - `TLOAD`
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
-pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollHost + ?Sized>(
+pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
 ) -> InstructionTable<WIRE, HOST> {
-    let mut table = make_instruction_table::<WIRE, HOST>();
+    let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
     table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
@@ -95,16 +87,13 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollHost + 
 /// The blockhash is computed as the keccak256 hash of the chain id and the block number.
 /// If the requested block number is the current block number, a future block number or a block
 /// number older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn blockhash<WIRE: InterpreterTypes, H: Host>(interpreter: &mut Interpreter<WIRE>, host: &mut H) {
     gas!(interpreter, gas::BLOCKHASH);
     popn_top!([], requested_block_number, interpreter);
 
     // compute the diff between the current block number and the requested block number
     let requested_block_number_u64 = as_u64_saturated!(requested_block_number);
-    let current_block_number = host.block().number();
+    let current_block_number = host.block_number();
     let diff = current_block_number.saturating_sub(requested_block_number_u64);
 
     *requested_block_number = match diff {
@@ -113,11 +102,14 @@ fn blockhash<WIRE: InterpreterTypes, H: Host + ?Sized>(
         // blockhash requested for block older than BLOCK_HASH_HISTORY - return 0
         x if x > BLOCK_HASH_HISTORY => U256::ZERO,
         // blockhash requested for block in the history - return the hash
-        _ => compute_block_hash(host.cfg().chain_id(), as_u64_saturated!(requested_block_number)),
+        _ => {
+            let chain_id = as_u64_saturated!(host.chain_id());
+            compute_block_hash(chain_id, as_u64_saturated!(requested_block_number))
+        }
     };
 }
 
-fn selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
+fn selfdestruct<WIRE: InterpreterTypes, H: Host>(
     interpreter: &mut Interpreter<WIRE>,
     _host: &mut H,
 ) {
@@ -127,7 +119,7 @@ fn selfdestruct<WIRE: InterpreterTypes, H: Host + ?Sized>(
 // CURIE OPCODE IMPLEMENTATIONS
 // ================================================================================================
 
-fn basefee<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
+fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(
     interpreter: &mut Interpreter<WIRE>,
     host: &mut H,
 ) {
@@ -137,10 +129,10 @@ fn basefee<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
     }
 
     gas!(interpreter, gas::BASE);
-    push!(interpreter, U256::from(host.block().basefee()));
+    push!(interpreter, U256::from(host.basefee()));
 }
 
-fn tstore<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
+fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(
     interpreter: &mut Interpreter<WIRE>,
     host: &mut H,
 ) {
@@ -157,7 +149,7 @@ fn tstore<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
     host.tstore(interpreter.input.target_address(), index, value);
 }
 
-fn tload<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
+fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(
     interpreter: &mut Interpreter<WIRE>,
     host: &mut H,
 ) {
@@ -173,7 +165,7 @@ fn tload<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
     *index = host.tload(interpreter.input.target_address(), *index);
 }
 
-fn mcopy<WIRE: InterpreterTypes, H: ScrollHost + ?Sized>(
+fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(
     interpreter: &mut Interpreter<WIRE>,
     host: &mut H,
 ) {

@@ -2,17 +2,14 @@ use crate::{
     evm::ScrollEvm, instructions::ScrollInstructions, l1block::L1BlockInfo,
     transaction::ScrollTxTr, ScrollSpecId, ScrollTransaction,
 };
-use std::vec::Vec;
 
 use revm::{
-    context::{BlockEnv, Cfg, CfgEnv, TxEnv},
-    context_interface::{Block, Journal},
+    context::{BlockEnv, Cfg, CfgEnv, JournalOutput, JournalTr, TxEnv},
+    context_interface::Block,
     database::EmptyDB,
     interpreter::interpreter::EthInterpreter,
-    state::EvmState,
-    Context, Database, JournaledState, MainContext,
+    Context, Database, Journal, MainContext,
 };
-use revm_primitives::Log;
 
 pub trait ScrollBuilder: Sized {
     type Context;
@@ -34,7 +31,7 @@ where
     TX: ScrollTxTr,
     CFG: Cfg<Spec = ScrollSpecId>,
     DB: Database,
-    JOURNAL: Journal<Database = DB, FinalOutput = (EvmState, Vec<Log>)>,
+    JOURNAL: JournalTr<Database = DB, FinalOutput = JournalOutput>,
 {
     type Context = Self;
 
@@ -61,16 +58,10 @@ impl DefaultScrollContext for ScrollContext<EmptyDB> {
     fn scroll() -> ScrollContext<EmptyDB> {
         Context::mainnet()
             .with_tx(ScrollTransaction::default())
-            .with_cfg(CfgEnv::new().with_spec(ScrollSpecId::default()))
+            .with_cfg(CfgEnv::new_with_spec(ScrollSpecId::default()))
             .with_chain(L1BlockInfo::default())
     }
 }
 
-pub type ScrollContext<DB> = Context<
-    BlockEnv,
-    ScrollTransaction<TxEnv>,
-    CfgEnv<ScrollSpecId>,
-    DB,
-    JournaledState<DB>,
-    L1BlockInfo,
->;
+pub type ScrollContext<DB> =
+    Context<BlockEnv, ScrollTransaction<TxEnv>, CfgEnv<ScrollSpecId>, DB, Journal<DB>, L1BlockInfo>;
