@@ -1,24 +1,23 @@
-use crate::{
-    instructions::{ScrollHost, ScrollInstructions},
-    precompile::ScrollPrecompileProvider,
-};
+use crate::{instructions::ScrollInstructions, precompile::ScrollPrecompileProvider};
 
+use crate::exec::ScrollContextTr;
 use revm::{
-    context::{setters::ContextSetters, Cfg, ContextTr, Evm, EvmData},
+    context::{Cfg, ContextSetters, ContextTr, Evm, EvmData},
     handler::{instructions::InstructionProvider, EvmTr},
-    interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction},
+    interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction, InterpreterTypes},
 };
+use revm_inspector::{Inspector, InspectorEvmTr, JournalExt};
 
 /// The Scroll Evm instance.
 pub struct ScrollEvm<
     CTX,
     INSP,
     I = ScrollInstructions<EthInterpreter, CTX>,
-    P = ScrollPrecompileProvider<CTX>,
+    P = ScrollPrecompileProvider,
 >(pub Evm<CTX, INSP, I, P>);
 
-impl<CTX: ScrollHost, INSP>
-    ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, ScrollPrecompileProvider<CTX>>
+impl<CTX: ScrollContextTr, INSP>
+    ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, ScrollPrecompileProvider>
 {
     pub fn new(ctx: CTX, inspector: INSP) -> Self {
         let spec = ctx.cfg().spec();
@@ -30,23 +29,13 @@ impl<CTX: ScrollHost, INSP>
     }
 }
 
-impl<CTX: ContextSetters, INSP, I> ContextSetters for ScrollEvm<CTX, INSP, I> {
-    type Tx = <CTX as ContextSetters>::Tx;
-    type Block = <CTX as ContextSetters>::Block;
-
-    fn set_tx(&mut self, tx: Self::Tx) {
-        self.0.data.ctx.set_tx(tx);
-    }
-
-    fn set_block(&mut self, block: Self::Block) {
-        self.0.data.ctx.set_block(block);
-    }
-}
-
 impl<CTX, INSP, I, P> EvmTr for ScrollEvm<CTX, INSP, I, P>
 where
     CTX: ContextTr,
-    I: InstructionProvider<Context = CTX, Output = InterpreterAction>,
+    I: InstructionProvider<
+        Context = CTX,
+        InterpreterTypes: InterpreterTypes<Output = InterpreterAction>,
+    >,
 {
     type Context = CTX;
     type Instructions = I;
@@ -57,7 +46,8 @@ where
         interpreter: &mut Interpreter<
             <Self::Instructions as InstructionProvider>::InterpreterTypes,
         >,
-    ) -> <Self::Instructions as InstructionProvider>::Output {
+    ) -> <<Self::Instructions as InstructionProvider>::InterpreterTypes as InterpreterTypes>::Output
+    {
         let context = &mut self.0.data.ctx;
         let instructions = &mut self.0.instruction;
         interpreter.run_plain(instructions.instruction_table(), context)
@@ -77,5 +67,35 @@ where
 
     fn ctx_precompiles(&mut self) -> (&mut Self::Context, &mut Self::Precompiles) {
         (&mut self.0.data.ctx, &mut self.0.precompiles)
+    }
+}
+
+impl<CTX, INSP, I, P> InspectorEvmTr for ScrollEvm<CTX, INSP, I, P>
+where
+    CTX: ContextTr<Journal: JournalExt> + ContextSetters,
+    I: InstructionProvider<
+        Context = CTX,
+        InterpreterTypes: InterpreterTypes<Output = InterpreterAction>,
+    >,
+    INSP: Inspector<CTX, I::InterpreterTypes>,
+{
+    type Inspector = INSP;
+
+    fn inspector(&mut self) -> &mut Self::Inspector {
+        &mut self.0.data.inspector
+    }
+
+    fn ctx_inspector(&mut self) -> (&mut Self::Context, &mut Self::Inspector) {
+        (&mut self.0.data.ctx, &mut self.0.data.inspector)
+    }
+
+    fn run_inspect_interpreter(
+        &mut self,
+        interpreter: &mut Interpreter<
+            <Self::Instructions as InstructionProvider>::InterpreterTypes,
+        >,
+    ) -> <<Self::Instructions as InstructionProvider>::InterpreterTypes as InterpreterTypes>::Output
+    {
+        self.0.run_inspect_interpreter(interpreter)
     }
 }

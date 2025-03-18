@@ -1,22 +1,22 @@
 //! Handler related to Scroll chain.
 
-use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
-use std::{string::ToString, vec::Vec};
+use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr};
+use std::string::ToString;
 
+use crate::exec::ScrollContextTr;
 use revm::{
     context::{
         result::{EVMError, FromStringError, HaltReason, InvalidTransaction},
-        Block, Cfg, ContextTr, Journal, Transaction,
+        Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
         post_execution, pre_execution, EvmTr, EvmTrError, Frame, FrameResult, Handler,
         MainnetHandler,
     },
-    interpreter::{FrameInput, Gas},
+    interpreter::{interpreter::EthInterpreter, FrameInput, Gas},
     primitives::U256,
-    state::EvmState,
 };
-use revm_primitives::Log;
+use revm_inspector::{Inspector, InspectorEvmTr, InspectorFrame, InspectorHandler};
 
 /// The Scroll handler.
 pub struct ScrollHandler<EVM, ERROR, FRAME> {
@@ -56,14 +56,7 @@ impl<DB, TX> IsTxError for EVMError<DB, TX> {
 ///   gas fee.
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
 where
-    EVM: EvmTr<
-        Context: ContextTr<
-            Journal: Journal<FinalOutput = (EvmState, Vec<Log>)>,
-            Tx: ScrollTxTr,
-            Cfg: Cfg<Spec = ScrollSpecId>,
-            Chain = L1BlockInfo,
-        >,
-    >,
+    EVM: EvmTr<Context: ScrollContextTr>,
     ERROR: EvmTrError<EVM> + FromStringError + IsTxError,
     FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
 {
@@ -210,6 +203,24 @@ where
 
         Ok(())
     }
+}
+
+impl<EVM, ERROR, FRAME> InspectorHandler for ScrollHandler<EVM, ERROR, FRAME>
+where
+    EVM: InspectorEvmTr<
+        Context: ScrollContextTr,
+        Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
+    >,
+    ERROR: EvmTrError<EVM> + FromStringError + IsTxError,
+    FRAME: InspectorFrame<
+        Evm = EVM,
+        Error = ERROR,
+        FrameResult = FrameResult,
+        FrameInit = FrameInput,
+        IT = EthInterpreter,
+    >,
+{
+    type IT = EthInterpreter;
 }
 
 #[cfg(test)]

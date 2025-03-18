@@ -1,4 +1,4 @@
-use revm::specification::hardfork::SpecId;
+use revm_primitives::hardfork::SpecId;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, enumn::N)]
@@ -47,7 +47,7 @@ impl From<ScrollSpecId> for SpecId {
 /// String identifiers for the Scroll hardforks.
 pub mod name {
     // Re-export the Ethereum hardforks.
-    pub use revm::specification::hardfork::name::{LATEST, SHANGHAI};
+    pub use revm_primitives::hardfork::name::{LATEST, SHANGHAI};
 
     pub const BERNOULLI: &str = "bernoulli";
     pub const CURIE: &str = "curie";

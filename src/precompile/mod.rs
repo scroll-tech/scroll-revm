@@ -16,24 +16,19 @@ mod hash;
 mod modexp;
 
 /// Provides Scroll precompiles, modifying any relevant behaviour.
-pub struct ScrollPrecompileProvider<CTX> {
-    precompile_provider: EthPrecompiles<CTX>,
+pub struct ScrollPrecompileProvider {
+    precompile_provider: EthPrecompiles,
 }
 
-impl<CTX> Clone for ScrollPrecompileProvider<CTX> {
+impl Clone for ScrollPrecompileProvider {
     fn clone(&self) -> Self {
         Self { precompile_provider: self.precompile_provider.clone() }
     }
 }
 
-impl<CTX> ScrollPrecompileProvider<CTX> {
+impl ScrollPrecompileProvider {
     pub fn new(precompiles: &'static Precompiles) -> Self {
-        Self {
-            precompile_provider: EthPrecompiles {
-                precompiles,
-                _phantom: core::marker::PhantomData,
-            },
-        }
+        Self { precompile_provider: EthPrecompiles { precompiles } }
     }
 
     #[inline]
@@ -86,22 +81,21 @@ pub(crate) fn bernoulli() -> &'static Precompiles {
     })
 }
 
-impl<CTX> PrecompileProvider for ScrollPrecompileProvider<CTX>
+impl<CTX> PrecompileProvider<CTX> for ScrollPrecompileProvider
 where
     CTX: ContextTr<Cfg: Cfg<Spec = ScrollSpecId>>,
 {
-    type Context = CTX;
     type Output = InterpreterResult;
 
     #[inline]
-    fn set_spec(&mut self, spec: <<Self::Context as ContextTr>::Cfg as Cfg>::Spec) {
+    fn set_spec(&mut self, spec: <<CTX as ContextTr>::Cfg as Cfg>::Spec) {
         *self = Self::new_with_spec(spec);
     }
 
     #[inline]
     fn run(
         &mut self,
-        context: &mut Self::Context,
+        context: &mut CTX,
         address: &Address,
         bytes: &Bytes,
         gas_limit: u64,
@@ -110,7 +104,7 @@ where
     }
 
     #[inline]
-    fn warm_addresses(&self) -> Box<impl Iterator<Item = Address> + '_> {
+    fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
         self.precompile_provider.warm_addresses()
     }
 
@@ -120,7 +114,7 @@ where
     }
 }
 
-impl<CTX> Default for ScrollPrecompileProvider<CTX> {
+impl Default for ScrollPrecompileProvider {
     fn default() -> Self {
         Self::new_with_spec(ScrollSpecId::default())
     }
