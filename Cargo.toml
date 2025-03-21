@@ -6,9 +6,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # revm
-revm = { version = "20.0.0-alpha.6", default-features = false }
-revm-primitives = { version = "16.0.0-alpha.4", default-features = false }
-revm-inspector = { version = "1.0.0-alpha.6", default-features = false }
+revm = { version = "=20.0.0-alpha.6", default-features = false }
+revm-primitives = { version = "=16.0.0-alpha.4", default-features = false }
+revm-inspector = { version = "=1.0.0-alpha.6", default-features = false }
 
 # misc
 auto_impl = "1.2.0"
