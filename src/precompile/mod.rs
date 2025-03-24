@@ -1,5 +1,5 @@
 use crate::ScrollSpecId;
-use std::boxed::Box;
+use std::{boxed::Box, string::String};
 
 use once_cell::race::OnceBox;
 use revm::{
