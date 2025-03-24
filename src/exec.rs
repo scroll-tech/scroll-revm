@@ -105,10 +105,25 @@ where
     INSP: Inspector<CTX, EthInterpreter>,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    fn inspect_commit_previous(&mut self) -> Self::CommitOutput {
+    fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
         self.inspect_replay().map(|r| {
             self.ctx().db().commit(r.state);
             r.result
         })
     }
 }
+
+// impl<CTX, INSP, PRECOMPILE> InspectCommitEvm
+//     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
+// where
+//     CTX: OpContextTr<Journal: JournalExt, Db: DatabaseCommit> + ContextSetters,
+//     INSP: Inspector<CTX, EthInterpreter>,
+//     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
+// {
+//     fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
+//         self.inspect_replay().map(|r| {
+//             self.ctx().db().commit(r.state);
+//             r.result
+//         })
+//     }
+// }
