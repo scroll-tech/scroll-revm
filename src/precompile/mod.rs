@@ -5,10 +5,11 @@ use once_cell::race::OnceBox;
 use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
-    interpreter::InterpreterResult,
+    interpreter::{InputsImpl, InterpreterResult},
     precompile::{self, PrecompileError, PrecompileWithAddress, Precompiles},
     primitives::{Address, Bytes},
 };
+use revm_primitives::hardfork::SpecId;
 
 mod blake2;
 mod bn128;
@@ -16,28 +17,20 @@ mod hash;
 mod modexp;
 
 /// Provides Scroll precompiles, modifying any relevant behaviour.
+#[derive(Debug, Clone)]
 pub struct ScrollPrecompileProvider {
     precompile_provider: EthPrecompiles,
-}
-
-impl Clone for ScrollPrecompileProvider {
-    fn clone(&self) -> Self {
-        Self { precompile_provider: self.precompile_provider.clone() }
-    }
+    spec: ScrollSpecId,
 }
 
 impl ScrollPrecompileProvider {
-    pub fn new(precompiles: &'static Precompiles) -> Self {
-        Self { precompile_provider: EthPrecompiles { precompiles } }
-    }
-
     #[inline]
     pub fn new_with_spec(spec: ScrollSpecId) -> Self {
         let precompiles = match spec {
             ScrollSpecId::SHANGHAI => pre_bernoulli(),
             ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
         };
-        Self::new(precompiles)
+        Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }
 }
 
@@ -88,8 +81,12 @@ where
     type Output = InterpreterResult;
 
     #[inline]
-    fn set_spec(&mut self, spec: <<CTX as ContextTr>::Cfg as Cfg>::Spec) {
+    fn set_spec(&mut self, spec: <CTX::Cfg as Cfg>::Spec) -> bool {
+        if spec == self.spec {
+            return false;
+        }
         *self = Self::new_with_spec(spec);
+        true
     }
 
     #[inline]
@@ -97,10 +94,11 @@ where
         &mut self,
         context: &mut CTX,
         address: &Address,
-        bytes: &Bytes,
+        inputs: &InputsImpl,
+        is_static: bool,
         gas_limit: u64,
     ) -> Result<Option<Self::Output>, String> {
-        self.precompile_provider.run(context, address, bytes, gas_limit)
+        self.precompile_provider.run(context, address, inputs, is_static, gas_limit)
     }
 
     #[inline]

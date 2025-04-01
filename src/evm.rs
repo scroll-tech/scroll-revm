@@ -3,7 +3,7 @@ use crate::{instructions::ScrollInstructions, precompile::ScrollPrecompileProvid
 use crate::exec::ScrollContextTr;
 use revm::{
     context::{Cfg, ContextSetters, ContextTr, Evm, EvmData},
-    handler::{instructions::InstructionProvider, EvmTr},
+    handler::{instructions::InstructionProvider, EvmTr, PrecompileProvider},
     interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction, InterpreterTypes},
 };
 use revm_inspector::{Inspector, InspectorEvmTr, JournalExt};
@@ -36,6 +36,7 @@ where
         Context = CTX,
         InterpreterTypes: InterpreterTypes<Output = InterpreterAction>,
     >,
+    P: PrecompileProvider<CTX>,
 {
     type Context = CTX;
     type Instructions = I;
@@ -78,6 +79,7 @@ where
         InterpreterTypes: InterpreterTypes<Output = InterpreterAction>,
     >,
     INSP: Inspector<CTX, I::InterpreterTypes>,
+    P: PrecompileProvider<CTX>,
 {
     type Inspector = INSP;
 
