@@ -202,3 +202,45 @@ impl<DB: Database> JournalTr for ScrollJournal<DB> {
         JournalTr::finalize(&mut self.inner)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revm::database::EmptyDB;
+    use revm_primitives::{address, bytes};
+
+    #[test]
+    fn test_should_be_delegated() -> Result<(), Box<dyn core::error::Error>> {
+        let mut journal = ScrollJournal::new(EmptyDB::new());
+        let address = address!("000000000000000000000000000000000000dead");
+        let delegated = address!("000000000000000000000000000000000000de1e");
+        let code = Bytecode::new_eip7702(delegated);
+        let code_delegated = Bytecode::new_legacy(bytes!("dead"));
+
+        // set the accounts in the journal.
+        journal.inner.inner.state.insert(
+            delegated,
+            Account {
+                info: Default::default(),
+                storage: Default::default(),
+                status: Default::default(),
+            },
+        );
+        journal.inner.inner.state.insert(
+            address,
+            Account {
+                info: Default::default(),
+                storage: Default::default(),
+                status: Default::default(),
+            },
+        );
+        journal.set_code(delegated, code_delegated);
+        journal.set_code(address, code);
+
+        // check the account is delegated.
+        let db_code = journal.load_account_delegated(address)?;
+        assert!(db_code.is_delegate_account_cold.is_some());
+
+        Ok(())
+    }
+}
