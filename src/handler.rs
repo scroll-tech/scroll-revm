@@ -55,6 +55,7 @@ impl<DB> MatchesInvalidTransactionVariantError for EVMError<DB> {
 /// The trait modifies the following handlers:
 /// - `validate` - Catches any `LackOfFundForMaxFee` error emitted from `validate_tx_against_state`
 ///   and verifies if the target transaction is a L1 message, in which case it ignores the error.
+/// - `validate_initial_tx_gas` - Adds the EIP-7702 gas due to the authorization list.
 /// - `validate_env` - Catches any `Eip7702NotSupported` error emitted from `validate_env` and
 ///   proceeds with the code from `validation::validate_env`, swapping the `SpecId` for
 ///   `ScrollSpecId`.
@@ -95,12 +96,12 @@ where
             .err()
             .map(|err| err.matches_variant(default_lack_of_funds_for_max_fee_error))
             .unwrap_or(false);
-        let should_skip_lack_of_funds_error = !evm.ctx().tx().is_l1_msg() ||
-            !evm.ctx().cfg().spec().is_enabled_in(ScrollSpecId::EUCLID);
+        let should_skip_lack_of_funds_error = evm.ctx().tx().is_l1_msg() &&
+            evm.ctx().cfg().spec().is_enabled_in(ScrollSpecId::EUCLID);
 
-        // If the error is `LackOfFundForMaxFee`, catch it and check if the transaction is a L1
-        // message. Otherwise, propagate the error.
-        if is_lack_of_funds_error && should_skip_lack_of_funds_error {
+        // if the error is not a `LackOfFundForMaxFee` or if we shouldn't skip lack of funds error,
+        // propagate the error.
+        if !is_lack_of_funds_error || !should_skip_lack_of_funds_error {
             res?;
         }
 
@@ -152,12 +153,12 @@ where
         // In the case of the `Eip7702NotSupported` error, we duplicate the code from
         // `validation::validate_tx_env` here, replacing the check on SpecId::PRAGUE by
         // ScrollSpecId::EUCLID.
-        if res
+        let is_eip_7702_not_supported_error = res
             .as_ref()
             .err()
             .map(|err: &ERROR| err.matches_variant(InvalidTransaction::Eip7702NotSupported))
-            .unwrap_or(false)
-        {
+            .unwrap_or(false);
+        if is_eip_7702_not_supported_error {
             let ctx = evm.ctx();
             let spec_id = ctx.cfg().spec();
             let tx = ctx.tx();
@@ -541,11 +542,11 @@ mod tests {
     #[test]
     fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
-        let mut evm = ctx.clone().build_scroll();
+        let evm = ctx.clone().build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let gas_empty_authorization_list = handler.validate_initial_tx_gas(&mut evm)?;
+        let gas_empty_authorization_list = handler.validate_initial_tx_gas(&evm)?;
 
-        let mut evm = ctx
+        let evm = ctx
             .modify_tx_chained(|tx| {
                 tx.base.gas_limit += eip7702::PER_EMPTY_ACCOUNT_COST;
                 tx.base.authorization_list = vec![SignedAuthorization::new_unchecked(
@@ -561,7 +562,7 @@ mod tests {
             })
             .build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let gas_with_authorization_list = handler.validate_initial_tx_gas(&mut evm)?;
+        let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
 
         assert_eq!(
             gas_empty_authorization_list.initial_gas + eip7702::PER_EMPTY_ACCOUNT_COST,
