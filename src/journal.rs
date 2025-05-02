@@ -206,6 +206,8 @@ impl<DB: Database> JournalTr for ScrollJournal<DB> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::boxed::Box;
+
     use revm::database::EmptyDB;
     use revm_primitives::{address, bytes};
 

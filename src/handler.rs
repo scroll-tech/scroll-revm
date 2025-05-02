@@ -468,7 +468,7 @@ mod tests {
         l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
         transaction::L1_MESSAGE_TYPE,
     };
-    use std::boxed::Box;
+    use std::{boxed::Box, vec};
 
     use revm::{
         context::transaction::{Authorization, SignedAuthorization},
