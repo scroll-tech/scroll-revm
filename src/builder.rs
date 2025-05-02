@@ -49,7 +49,7 @@ where
     }
 }
 
-/// Allows to build a default Scroll [`Context`].
+/// Allows to build a default [`ScrollContextFull`].
 pub trait DefaultScrollContext {
     fn scroll() -> ScrollContext<EmptyDB>;
 }

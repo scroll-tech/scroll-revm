@@ -1,7 +1,7 @@
 //! Handler related to Scroll chain.
 
 use crate::{exec::ScrollContextTr, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
-use std::string::ToString;
+use std::{boxed::Box, string::ToString};
 
 use revm::{
     bytecode::Bytecode,
