@@ -2,6 +2,7 @@ use revm_primitives::hardfork::SpecId;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, enumn::N)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[allow(non_camel_case_types)]
 pub enum ScrollSpecId {
     SHANGHAI = 1,

@@ -12,6 +12,7 @@ revm-inspector = { version = "3.0.0", default-features = false }
 
 # misc
 auto_impl = "1.2.0"
+derive-where = { version = "1.2.7", default-features = false }
 enumn = { version = "0.1" }
 once_cell = { version = "1.19", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", features = ["derive"], optional = true, default-features = false }

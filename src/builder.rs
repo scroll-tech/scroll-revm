@@ -1,15 +1,17 @@
 use crate::{
-    evm::ScrollEvm, instructions::ScrollInstructions, l1block::L1BlockInfo,
-    transaction::ScrollTxTr, ScrollSpecId, ScrollTransaction,
+    context::ScrollContextFull, evm::ScrollEvm, instructions::ScrollInstructions,
+    journal::ScrollJournal, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId,
+    ScrollTransaction,
 };
 
 use revm::{
-    context::{BlockEnv, Cfg, CfgEnv, JournalOutput, JournalTr, TxEnv},
+    context::{BlockEnv, Cfg, CfgEnv, JournalTr, TxEnv},
     context_interface::Block,
     database::EmptyDB,
     interpreter::interpreter::EthInterpreter,
-    Context, Database, Journal, MainContext,
+    Database, MainContext,
 };
+use revm_primitives::hardfork::SpecId;
 
 pub trait ScrollBuilder: Sized {
     type Context;
@@ -24,14 +26,12 @@ pub trait ScrollBuilder: Sized {
     ) -> ScrollEvm<Self::Context, INSP, ScrollInstructions<EthInterpreter, Self::Context>>;
 }
 
-impl<BLOCK, TX, CFG, DB, JOURNAL> ScrollBuilder
-    for Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>
+impl<BLOCK, TX, CFG, DB> ScrollBuilder for ScrollContextFull<BLOCK, TX, CFG, DB, L1BlockInfo>
 where
     BLOCK: Block,
     TX: ScrollTxTr,
     CFG: Cfg<Spec = ScrollSpecId>,
     DB: Database,
-    JOURNAL: JournalTr<Database = DB, FinalOutput = JournalOutput>,
 {
     type Context = Self;
 
@@ -56,12 +56,19 @@ pub trait DefaultScrollContext {
 
 impl DefaultScrollContext for ScrollContext<EmptyDB> {
     fn scroll() -> ScrollContext<EmptyDB> {
-        Context::mainnet()
+        let scroll_spec_id = ScrollSpecId::default();
+
+        let mut journal = ScrollJournal::new(EmptyDB::new());
+        journal.set_spec_id(SpecId::default());
+        journal.set_scroll_spec_id(scroll_spec_id);
+
+        ScrollContextFull::mainnet()
             .with_tx(ScrollTransaction::default())
-            .with_cfg(CfgEnv::new_with_spec(ScrollSpecId::default()))
+            .with_cfg(CfgEnv::new_with_spec(scroll_spec_id))
+            .with_new_journal(journal)
             .with_chain(L1BlockInfo::default())
     }
 }
 
 pub type ScrollContext<DB> =
-    Context<BlockEnv, ScrollTransaction<TxEnv>, CfgEnv<ScrollSpecId>, DB, Journal<DB>, L1BlockInfo>;
+    ScrollContextFull<BlockEnv, ScrollTransaction<TxEnv>, CfgEnv<ScrollSpecId>, DB, L1BlockInfo>;
