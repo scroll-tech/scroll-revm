@@ -6,7 +6,7 @@ use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::{InputsImpl, InterpreterResult},
-    precompile::{self, PrecompileError, PrecompileWithAddress, Precompiles},
+    precompile::{self, secp256r1, PrecompileError, PrecompileWithAddress, Precompiles},
     primitives::{Address, Bytes},
 };
 use revm_primitives::hardfork::SpecId;
@@ -29,6 +29,7 @@ impl ScrollPrecompileProvider {
         let precompiles = match spec {
             ScrollSpecId::SHANGHAI => pre_bernoulli(),
             ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
+            ScrollSpecId::EUCLID => euclid(),
         };
         Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }
@@ -70,6 +71,16 @@ pub(crate) fn bernoulli() -> &'static Precompiles {
     INSTANCE.get_or_init(|| {
         let mut precompiles = pre_bernoulli().clone();
         precompiles.extend([hash::sha256::SHA256_BERNOULLI]);
+        Box::new(precompiles)
+    })
+}
+
+/// Returns precompiles for Euclid spec.
+pub(crate) fn euclid() -> &'static Precompiles {
+    static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
+    INSTANCE.get_or_init(|| {
+        let mut precompiles = bernoulli().clone();
+        precompiles.extend([secp256r1::P256VERIFY]);
         Box::new(precompiles)
     })
 }

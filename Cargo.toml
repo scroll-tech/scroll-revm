@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # revm
-revm = { version = "22.0.0", default-features = false }
+revm = { version = "22.0.0", default-features = false, features = ["secp256r1"] }
 revm-primitives = { version = "18.0.0", default-features = false }
 revm-inspector = { version = "3.0.0", default-features = false }
 
