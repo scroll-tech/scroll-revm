@@ -1,4 +1,5 @@
 use crate::{journal::ScrollJournal, ScrollSpecId};
+use core::ops::{Deref, DerefMut};
 
 use derive_where::derive_where;
 use revm::{
@@ -20,6 +21,22 @@ pub struct ScrollContextFull<
     CHAIN = (),
 > {
     pub inner: Context<BLOCK, TX, CFG, DB, ScrollJournal<DB>, CHAIN>,
+}
+
+impl<BLOCK, TX, CFG, DB: Database, CHAIN> Deref for ScrollContextFull<BLOCK, TX, CFG, DB, CHAIN> {
+    type Target = Context<BLOCK, TX, CFG, DB, ScrollJournal<DB>, CHAIN>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<BLOCK, TX, CFG, DB: Database, CHAIN> DerefMut
+    for ScrollContextFull<BLOCK, TX, CFG, DB, CHAIN>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }
 
 impl<BLOCK: Block, TX: Transaction, DB: Database, CFG: Cfg, CHAIN> ContextTr

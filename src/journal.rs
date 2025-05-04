@@ -6,9 +6,10 @@ use revm::{
         JournalOutput, JournalTr,
     },
     interpreter::{SStoreResult, SelfDestructResult, StateLoad},
-    state::Account,
-    Database, Journal,
+    state::{Account, EvmState},
+    Database, Journal, JournalEntry,
 };
+use revm_inspector::JournalExt;
 use revm_primitives::{hardfork::SpecId, Address, HashSet, Log, B256, U256};
 
 /// A wrapper around the default Journal.
@@ -16,9 +17,9 @@ use revm_primitives::{hardfork::SpecId, Address, HashSet, Log, B256, U256};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScrollJournal<DB> {
     /// The inner journal.
-    inner: Journal<DB>,
+    pub inner: Journal<DB>,
     /// The spec id.
-    spec_id: ScrollSpecId,
+    pub spec_id: ScrollSpecId,
 }
 
 impl<DB> ScrollJournal<DB> {
@@ -200,6 +201,24 @@ impl<DB: Database> JournalTr for ScrollJournal<DB> {
 
     fn finalize(&mut self) -> Self::FinalOutput {
         JournalTr::finalize(&mut self.inner)
+    }
+}
+
+impl<DB: Database> JournalExt for ScrollJournal<DB> {
+    fn logs(&self) -> &[Log] {
+        JournalExt::logs(&self.inner)
+    }
+
+    fn last_journal(&self) -> &[JournalEntry] {
+        JournalExt::last_journal(&self.inner)
+    }
+
+    fn evm_state(&self) -> &EvmState {
+        JournalExt::evm_state(&self.inner)
+    }
+
+    fn evm_state_mut(&mut self) -> &mut EvmState {
+        JournalExt::evm_state_mut(&mut self.inner)
     }
 }
 
