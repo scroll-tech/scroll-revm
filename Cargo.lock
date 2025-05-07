@@ -1792,9 +1792,8 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "revm"
-version = "22.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85eb66316c261a8ffd266e3c295991d703e810b29b57006dfea08481e81e2f56"
+version = "22.0.1"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "revm-bytecode",
  "revm-context",
@@ -1812,8 +1811,7 @@ dependencies = [
 [[package]]
 name = "revm-bytecode"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e63e138d520c5c5bc25ecc82506e9e4e6e85a811809fc5251c594378dccabfc6"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "bitvec",
  "phf",
@@ -1823,9 +1821,8 @@ dependencies = [
 
 [[package]]
 name = "revm-context"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7836a0adfcb1a64427ddd314f9cb8703fbdda36348b73df86eb28977aaff1acc"
+version = "3.0.1"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "cfg-if",
  "derive-where",
@@ -1840,8 +1837,7 @@ dependencies = [
 [[package]]
 name = "revm-context-interface"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82d74335aa1f14222cc4d3be1f62a029cc7dc03819cc8d080ff17b7e1d76375f"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "alloy-eip2930",
  "alloy-eip7702",
@@ -1855,8 +1851,7 @@ dependencies = [
 [[package]]
 name = "revm-database"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e5c80c5a2fd605f2119ee32a63fb3be941fb6a81ced8cdb3397abca28317224"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "alloy-eips",
  "revm-bytecode",
@@ -1869,8 +1864,7 @@ dependencies = [
 [[package]]
 name = "revm-database-interface"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0e4dfbc734b1ea67b5e8f8b3c7dc4283e2210d978cdaf6c7a45e97be5ea53b3"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "auto_impl",
  "revm-primitives",
@@ -1880,9 +1874,8 @@ dependencies = [
 
 [[package]]
 name = "revm-handler"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4354eacb23dda95569e9d74e25066c0ed7889683f6ff49149b5319bcb856745a"
+version = "3.0.1"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "auto_impl",
  "revm-bytecode",
@@ -1898,9 +1891,8 @@ dependencies = [
 
 [[package]]
 name = "revm-inspector"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "babc07c45ff2dcb62fc54d7b69cd60cf209896319905e7653c6bdbcb5152f695"
+version = "3.0.1"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "auto_impl",
  "revm-context",
@@ -1916,8 +1908,7 @@ dependencies = [
 [[package]]
 name = "revm-interpreter"
 version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "feb20260342003cfb791536e678ef5bbea1bfd1f8178b170e8885ff821985473"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "revm-bytecode",
  "revm-context-interface",
@@ -1928,8 +1919,7 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "19.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "418e95eba68c9806c74f3e36cd5d2259170b61e90ac608b17ff8c435038ddace"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -1954,8 +1944,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "18.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc2283ff87358ec7501956c5dd8724a6c2be959c619c4861395ae5e0054575f"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "alloy-primitives",
  "enumn",
@@ -1967,7 +1956,6 @@ name = "revm-scroll"
 version = "0.1.0"
 dependencies = [
  "auto_impl",
- "derive-where",
  "enumn",
  "once_cell",
  "revm",
@@ -1979,8 +1967,7 @@ dependencies = [
 [[package]]
 name = "revm-state"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09dd121f6e66d75ab111fb51b4712f129511569bc3e41e6067ae760861418bd8"
+source = "git+https://github.com/scroll-tech/revm?branch=feat%2Fenable-eip7702#5a4b0594161975e3e711a681809b7d710f2c0fec"
 dependencies = [
  "bitflags",
  "revm-bytecode",

@@ -1,17 +1,15 @@
 use crate::{
-    context::ScrollContextFull, evm::ScrollEvm, instructions::ScrollInstructions,
-    journal::ScrollJournal, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId,
-    ScrollTransaction,
+    evm::ScrollEvm, instructions::ScrollInstructions, l1block::L1BlockInfo,
+    transaction::ScrollTxTr, ScrollSpecId, ScrollTransaction,
 };
 
 use revm::{
-    context::{BlockEnv, Cfg, CfgEnv, JournalTr, TxEnv},
+    context::{BlockEnv, Cfg, CfgEnv, JournalOutput, JournalTr, TxEnv},
     context_interface::Block,
     database::EmptyDB,
     interpreter::interpreter::EthInterpreter,
-    Database, MainContext,
+    Context, Database, Journal, MainContext,
 };
-use revm_primitives::hardfork::SpecId;
 
 pub trait ScrollBuilder: Sized {
     type Context;
@@ -26,12 +24,14 @@ pub trait ScrollBuilder: Sized {
     ) -> ScrollEvm<Self::Context, INSP, ScrollInstructions<EthInterpreter, Self::Context>>;
 }
 
-impl<BLOCK, TX, CFG, DB> ScrollBuilder for ScrollContextFull<BLOCK, TX, CFG, DB, L1BlockInfo>
+impl<BLOCK, TX, CFG, DB, JOURNAL> ScrollBuilder
+    for Context<BLOCK, TX, CFG, DB, JOURNAL, L1BlockInfo>
 where
     BLOCK: Block,
     TX: ScrollTxTr,
     CFG: Cfg<Spec = ScrollSpecId>,
     DB: Database,
+    JOURNAL: JournalTr<Database = DB, FinalOutput = JournalOutput>,
 {
     type Context = Self;
 
@@ -49,26 +49,36 @@ where
     }
 }
 
-/// Allows to build a default [`ScrollContextFull`].
+/// Allows to build a default Scroll [`Context`].
 pub trait DefaultScrollContext {
     fn scroll() -> ScrollContext<EmptyDB>;
 }
 
 impl DefaultScrollContext for ScrollContext<EmptyDB> {
     fn scroll() -> ScrollContext<EmptyDB> {
-        let scroll_spec_id = ScrollSpecId::default();
+        let spec = ScrollSpecId::default();
+        let mut cfg = CfgEnv::new_with_spec(spec);
+        cfg.enable_eip7702 = spec >= ScrollSpecId::EUCLID;
 
-        let mut journal = ScrollJournal::new(EmptyDB::new());
-        journal.set_spec_id(SpecId::default());
-        journal.set_scroll_spec_id(scroll_spec_id);
-
-        ScrollContextFull::mainnet()
+        Context::mainnet()
             .with_tx(ScrollTransaction::default())
-            .with_cfg(CfgEnv::new_with_spec(scroll_spec_id))
-            .with_new_journal(journal)
+            .with_cfg(cfg)
             .with_chain(L1BlockInfo::default())
     }
 }
 
+/// Activates EIP-7702 if necessary for the context.
+pub trait MaybeWithEip7702 {
+    /// Activates EIP-7702 if necessary.
+    fn maybe_with_eip_7702(self) -> Self;
+}
+
+impl<DB: Database> MaybeWithEip7702 for ScrollContext<DB> {
+    fn maybe_with_eip_7702(mut self) -> Self {
+        self.cfg.enable_eip7702 = self.cfg.spec >= ScrollSpecId::EUCLID;
+        self
+    }
+}
+
 pub type ScrollContext<DB> =
-    ScrollContextFull<BlockEnv, ScrollTransaction<TxEnv>, CfgEnv<ScrollSpecId>, DB, L1BlockInfo>;
+    Context<BlockEnv, ScrollTransaction<TxEnv>, CfgEnv<ScrollSpecId>, DB, Journal<DB>, L1BlockInfo>;
