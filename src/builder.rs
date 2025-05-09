@@ -56,10 +56,27 @@ pub trait DefaultScrollContext {
 
 impl DefaultScrollContext for ScrollContext<EmptyDB> {
     fn scroll() -> ScrollContext<EmptyDB> {
+        let spec = ScrollSpecId::default();
+        let mut cfg = CfgEnv::new_with_spec(spec);
+        cfg.enable_eip7702 = spec >= ScrollSpecId::EUCLID;
+
         Context::mainnet()
             .with_tx(ScrollTransaction::default())
-            .with_cfg(CfgEnv::new_with_spec(ScrollSpecId::default()))
+            .with_cfg(cfg)
             .with_chain(L1BlockInfo::default())
+    }
+}
+
+/// Activates EIP-7702 if necessary for the context.
+pub trait MaybeWithEip7702 {
+    /// Activates EIP-7702 if necessary.
+    fn maybe_with_eip_7702(self) -> Self;
+}
+
+impl<DB: Database> MaybeWithEip7702 for ScrollContext<DB> {
+    fn maybe_with_eip_7702(mut self) -> Self {
+        self.cfg.enable_eip7702 = self.cfg.spec >= ScrollSpecId::EUCLID;
+        self
     }
 }
 

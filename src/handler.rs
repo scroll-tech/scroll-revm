@@ -1,19 +1,18 @@
 //! Handler related to Scroll chain.
 
-use crate::{l1block::L1BlockInfo, transaction::ScrollTxTr};
+use crate::{exec::ScrollContextTr, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
 use std::string::ToString;
 
-use crate::exec::ScrollContextTr;
 use revm::{
     context::{
-        result::{EVMError, FromStringError, HaltReason, InvalidTransaction},
+        result::{EVMError, HaltReason, InvalidTransaction},
         Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
         post_execution, pre_execution, EvmTr, EvmTrError, Frame, FrameResult, Handler,
         MainnetHandler,
     },
-    interpreter::{interpreter::EthInterpreter, FrameInput, Gas},
+    interpreter::{interpreter::EthInterpreter, FrameInput, Gas, InitialAndFloorGas},
     primitives::U256,
 };
 use revm_inspector::{Inspector, InspectorEvmTr, InspectorFrame, InspectorHandler};
@@ -35,29 +34,37 @@ impl<EVM, ERROR, FRAME> Default for ScrollHandler<EVM, ERROR, FRAME> {
     }
 }
 
-pub trait IsTxError {
-    fn is_tx_error(&self) -> bool;
+pub trait IsLackOfFundForMaxFeeError {
+    fn is_lack_of_funds_for_max_fee_error(&self) -> bool;
 }
 
-impl<DB, TX> IsTxError for EVMError<DB, TX> {
-    fn is_tx_error(&self) -> bool {
-        matches!(self, EVMError::Transaction(_))
+impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
+    fn is_lack_of_funds_for_max_fee_error(&self) -> bool {
+        if let EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee { .. }) = self {
+            return true;
+        }
+        false
     }
 }
 
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
-/// - `pre_execution.load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that
-///   it can be used to calculate the L1 cost of a transaction.
-/// - `pre_execution.deduct_caller` - Overrides the logic to deduct the max transaction fee,
-///   including the L1 fee, from the caller's balance.
+/// - `validate` - Catches any `LackOfFundForMaxFee` error emitted from `validate_tx_against_state`
+///   and verifies if the target transaction is a L1 message, in which case it ignores the error.
+/// - `load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
+///   to calculate the L1 cost of a transaction.
+/// - `deduct_caller` - Overrides the logic to deduct the max transaction fee, including the L1 fee,
+///   from the caller's balance.
+/// - `last_frame_result` - Overrides the logic for gas refund in the case the transaction is a L1
+///   message.
+/// - `refund` - Overrides the logic for gas refund in the case the transaction is a L1 message.
 /// - `post_execution.reward_beneficiary` - Overrides the logic to reward the beneficiary with the
-///   gas fee.
+///   gas fee and skip rewarding in case the transaction is a L1 message.
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
 where
     EVM: EvmTr<Context: ScrollContextTr>,
-    ERROR: EvmTrError<EVM> + FromStringError + IsTxError,
+    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError + From<InvalidTransaction>,
     FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
 {
     type Evm = EVM;
@@ -65,6 +72,27 @@ where
     type Frame = FRAME;
     type HaltReason = HaltReason;
 
+    #[inline]
+    fn validate(&self, evm: &mut Self::Evm) -> Result<InitialAndFloorGas, Self::Error> {
+        self.validate_env(evm)?;
+        let initial_and_floor_gas = self.validate_initial_tx_gas(evm)?;
+        let res = self.validate_tx_against_state(evm);
+
+        let is_lack_of_funds_error =
+            res.as_ref().err().is_some_and(|err| err.is_lack_of_funds_for_max_fee_error());
+        let should_skip_lack_of_funds_error = evm.ctx().tx().is_l1_msg() &&
+            evm.ctx().cfg().spec().is_enabled_in(ScrollSpecId::EUCLID);
+
+        // if the error is not a `LackOfFundForMaxFee` or if we shouldn't skip lack of funds error,
+        // propagate the error.
+        if !is_lack_of_funds_error || !should_skip_lack_of_funds_error {
+            res?;
+        }
+
+        Ok(initial_and_floor_gas)
+    }
+
+    #[inline]
     fn load_accounts(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
         // only load the L1BlockInfo for txs that are not l1 messages.
         if !evm.ctx().tx().is_l1_msg() {
@@ -76,6 +104,7 @@ where
         self.mainnet.load_accounts(evm)
     }
 
+    #[inline]
     fn deduct_caller(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
         // load caller's account.
         let ctx = evm.ctx();
@@ -121,6 +150,7 @@ where
         Ok(())
     }
 
+    #[inline]
     fn last_frame_result(
         &self,
         evm: &mut Self::Evm,
@@ -146,6 +176,7 @@ where
         Ok(())
     }
 
+    #[inline]
     fn refund(
         &self,
         evm: &mut Self::Evm,
@@ -211,7 +242,7 @@ where
         Context: ScrollContextTr,
         Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
     >,
-    ERROR: EvmTrError<EVM> + FromStringError + IsTxError,
+    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError,
     FRAME: InspectorFrame<
         Evm = EVM,
         Error = ERROR,
@@ -231,16 +262,20 @@ mod tests {
         l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
         transaction::L1_MESSAGE_TYPE,
     };
-    use std::boxed::Box;
+    use std::{boxed::Box, vec};
 
     use revm::{
+        context::{
+            transaction::{Authorization, SignedAuthorization},
+            TransactionType,
+        },
         database::{DbAccount, InMemoryDB},
         handler::EthFrame,
         interpreter::{CallOutcome, InstructionResult, InterpreterResult},
         state::AccountInfo,
         Context,
     };
-    use revm_primitives::{address, bytes, Address};
+    use revm_primitives::{address, bytes, eip7702, Address};
 
     const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
     const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
@@ -273,6 +308,92 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context();
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let err = handler.validate(&mut evm).unwrap_err();
+        assert_eq!(
+            err,
+            EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee {
+                fee: Box::new(U256::from(21000)),
+                balance: Box::default()
+            })
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_lacking_funds_l1_message() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context()
+            .modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE)
+            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.validate(&mut evm)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context();
+        let evm = ctx.clone().build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let gas_empty_authorization_list = handler.validate_initial_tx_gas(&evm)?;
+
+        let evm = ctx
+            .modify_tx_chained(|tx| {
+                tx.base.gas_limit += eip7702::PER_EMPTY_ACCOUNT_COST;
+                tx.base.authorization_list = vec![SignedAuthorization::new_unchecked(
+                    Authorization {
+                        chain_id: Default::default(),
+                        address: Default::default(),
+                        nonce: 0,
+                    },
+                    0,
+                    U256::ZERO,
+                    U256::ZERO,
+                )]
+            })
+            .build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
+
+        assert_eq!(
+            gas_empty_authorization_list.initial_gas + eip7702::PER_EMPTY_ACCOUNT_COST,
+            gas_with_authorization_list.initial_gas
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context()
+            .modify_tx_chained(|tx| {
+                tx.base.tx_type = TransactionType::Eip7702 as u8;
+                tx.base.authorization_list = vec![SignedAuthorization::new_unchecked(
+                    Authorization {
+                        chain_id: Default::default(),
+                        address: Default::default(),
+                        nonce: 0,
+                    },
+                    0,
+                    U256::ZERO,
+                    U256::ZERO,
+                )]
+            })
+            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.validate_env(&mut evm)?;
+
+        Ok(())
+    }
+
+    #[test]
     fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
         let mut evm = ctx.build_scroll();
@@ -294,6 +415,20 @@ mod tests {
 
         let l1_block_info = evm.ctx().chain.clone();
         assert_eq!(l1_block_info, L1BlockInfo::default());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_apply_eip7702_auth_list() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context()
+            .modify_tx_chained(|tx| {
+                tx.base.tx_type = TransactionType::Eip7702 as u8;
+            })
+            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.apply_eip7702_auth_list(&mut evm)?;
 
         Ok(())
     }
