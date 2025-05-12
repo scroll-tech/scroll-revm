@@ -5,7 +5,7 @@ use revm::{
         utilities::right_pad_with_offset,
         PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, U256},
 };
 
 // CONSTANTS
@@ -36,7 +36,7 @@ pub const BERNOULLI: PrecompileWithAddress =
 ///   length is greater than 32 bytes.
 /// - `PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into())` if the modulus
 ///   length is greater than 32 bytes.
-fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
     let base_len = U256::from_be_bytes(right_pad_with_offset::<32>(input, 0).into_owned());
     let exp_len = U256::from_be_bytes(right_pad_with_offset::<32>(input, 32).into_owned());
     let mod_len = U256::from_be_bytes(right_pad_with_offset::<32>(input, 64).into_owned());

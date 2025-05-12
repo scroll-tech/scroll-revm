@@ -1,7 +1,7 @@
 //! Handler related to Scroll chain.
 
 use crate::{exec::ScrollContextTr, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
-use std::string::ToString;
+use std::{boxed::Box, string::ToString};
 
 use revm::{
     context::{
@@ -9,10 +9,10 @@ use revm::{
         Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
-        post_execution, pre_execution, EvmTr, EvmTrError, Frame, FrameResult, Handler,
-        MainnetHandler,
+        post_execution, pre_execution, pre_execution::validate_account_nonce_and_code, EvmTr,
+        EvmTrError, Frame, FrameResult, Handler, MainnetHandler,
     },
-    interpreter::{interpreter::EthInterpreter, FrameInput, Gas, InitialAndFloorGas},
+    interpreter::{interpreter::EthInterpreter, FrameInput, Gas},
     primitives::U256,
 };
 use revm_inspector::{Inspector, InspectorEvmTr, InspectorFrame, InspectorHandler};
@@ -50,12 +50,10 @@ impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
-/// - `validate` - Catches any `LackOfFundForMaxFee` error emitted from `validate_tx_against_state`
-///   and verifies if the target transaction is a L1 message, in which case it ignores the error.
 /// - `load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
 ///   to calculate the L1 cost of a transaction.
-/// - `deduct_caller` - Overrides the logic to deduct the max transaction fee, including the L1 fee,
-///   from the caller's balance.
+/// - `validate_against_state_and_deduct_caller` - Overrides the logic to deduct the max transaction
+///   fee, including the L1 fee, from the caller's balance.
 /// - `last_frame_result` - Overrides the logic for gas refund in the case the transaction is a L1
 ///   message.
 /// - `refund` - Overrides the logic for gas refund in the case the transaction is a L1 message.
@@ -73,26 +71,6 @@ where
     type HaltReason = HaltReason;
 
     #[inline]
-    fn validate(&self, evm: &mut Self::Evm) -> Result<InitialAndFloorGas, Self::Error> {
-        self.validate_env(evm)?;
-        let initial_and_floor_gas = self.validate_initial_tx_gas(evm)?;
-        let res = self.validate_tx_against_state(evm);
-
-        let is_lack_of_funds_error =
-            res.as_ref().err().is_some_and(|err| err.is_lack_of_funds_for_max_fee_error());
-        let should_skip_lack_of_funds_error = evm.ctx().tx().is_l1_msg() &&
-            evm.ctx().cfg().spec().is_enabled_in(ScrollSpecId::EUCLID);
-
-        // if the error is not a `LackOfFundForMaxFee` or if we shouldn't skip lack of funds error,
-        // propagate the error.
-        if !is_lack_of_funds_error || !should_skip_lack_of_funds_error {
-            res?;
-        }
-
-        Ok(initial_and_floor_gas)
-    }
-
-    #[inline]
     fn load_accounts(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
         // only load the L1BlockInfo for txs that are not l1 messages.
         if !evm.ctx().tx().is_l1_msg() {
@@ -105,18 +83,23 @@ where
     }
 
     #[inline]
-    fn deduct_caller(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
+    fn validate_against_state_and_deduct_caller(
+        &self,
+        evm: &mut Self::Evm,
+    ) -> Result<(), Self::Error> {
         // load caller's account.
         let ctx = evm.ctx();
         let caller = ctx.tx().caller();
         let is_l1_msg = ctx.tx().is_l1_msg();
         let kind = ctx.tx().kind();
         let spec = ctx.cfg().spec();
+        let is_eip3607_disabled = ctx.cfg().is_eip3607_disabled();
+        let is_nonce_check_disabled = ctx.cfg().is_nonce_check_disabled();
 
         if !is_l1_msg {
             // We deduct caller max balance after minting and before deducing the
             // l1 cost, max values is already checked in pre_validate but l1 cost wasn't.
-            pre_execution::deduct_caller(ctx)?;
+            pre_execution::validate_against_state_and_deduct_caller::<_, ERROR>(ctx)?;
 
             let l1_block_info = ctx.chain().clone();
             let Some(rlp_bytes) = ctx.tx().rlp_bytes() else {
@@ -137,11 +120,29 @@ where
             caller_account.data.info.balance =
                 caller_account.data.info.balance.saturating_sub(tx_l1_cost);
         } else {
-            let caller_account = ctx.journal().load_account(caller)?;
-            // bump the nonce for calls. Nonce for CREATE will be bumped in `handle_create`.
-            if kind.is_call() {
-                // Nonce is already checked
-                caller_account.data.info.nonce = caller_account.data.info.nonce.saturating_add(1);
+            // Load caller's account.
+            let (tx, journal) = ctx.tx_journal();
+            let mut caller_account = journal.load_account(caller)?;
+
+            validate_account_nonce_and_code(
+                &mut caller_account.info,
+                tx.nonce(),
+                kind.is_call(),
+                is_eip3607_disabled,
+                is_nonce_check_disabled,
+            )?;
+
+            // only check balance if l1 message and Spec is EUCLID.
+            let skip_balance_check = tx.is_l1_msg() && spec.is_enabled_in(ScrollSpecId::EUCLID);
+            if !skip_balance_check {
+                let max_balance_spending = tx.max_balance_spending()?;
+                if max_balance_spending > caller_account.info.balance {
+                    return Err(InvalidTransaction::LackOfFundForMaxFee {
+                        fee: Box::new(max_balance_spending),
+                        balance: Box::new(caller_account.info.balance),
+                    }
+                    .into());
+                }
             }
 
             // touch account so we know it is changed.
@@ -152,7 +153,7 @@ where
 
     #[inline]
     fn last_frame_result(
-        &self,
+        &mut self,
         evm: &mut Self::Evm,
         frame_result: &mut <Self::Frame as Frame>::FrameResult,
     ) -> Result<(), Self::Error> {
@@ -261,11 +262,13 @@ mod tests {
         builder::{DefaultScrollContext, ScrollBuilder, ScrollContext},
         l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
         transaction::L1_MESSAGE_TYPE,
+        ScrollSpecId,
     };
     use std::{boxed::Box, vec};
 
     use revm::{
         context::{
+            either::Either,
             transaction::{Authorization, SignedAuthorization},
             TransactionType,
         },
@@ -312,7 +315,7 @@ mod tests {
         let ctx = context();
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let err = handler.validate(&mut evm).unwrap_err();
+        let err = handler.validate_against_state_and_deduct_caller(&mut evm).unwrap_err();
         assert_eq!(
             err,
             EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee {
@@ -346,7 +349,7 @@ mod tests {
         let evm = ctx
             .modify_tx_chained(|tx| {
                 tx.base.gas_limit += eip7702::PER_EMPTY_ACCOUNT_COST;
-                tx.base.authorization_list = vec![SignedAuthorization::new_unchecked(
+                tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
                     Authorization {
                         chain_id: Default::default(),
                         address: Default::default(),
@@ -355,7 +358,7 @@ mod tests {
                     0,
                     U256::ZERO,
                     U256::ZERO,
-                )]
+                ))]
             })
             .build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -374,7 +377,7 @@ mod tests {
         let ctx = context()
             .modify_tx_chained(|tx| {
                 tx.base.tx_type = TransactionType::Eip7702 as u8;
-                tx.base.authorization_list = vec![SignedAuthorization::new_unchecked(
+                tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
                     Authorization {
                         chain_id: Default::default(),
                         address: Default::default(),
@@ -383,7 +386,7 @@ mod tests {
                     0,
                     U256::ZERO,
                     U256::ZERO,
-                )]
+                ))]
             })
             .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
         let mut evm = ctx.build_scroll();
@@ -451,7 +454,7 @@ mod tests {
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         handler.load_accounts(&mut evm)?;
-        handler.deduct_caller(&mut evm)?;
+        handler.validate_against_state_and_deduct_caller(&mut evm)?;
 
         let caller_account = evm.ctx().journal().load_account(CALLER)?;
         assert_eq!(caller_account.info.balance, U256::ZERO);
@@ -467,7 +470,7 @@ mod tests {
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         handler.load_accounts(&mut evm)?;
-        handler.deduct_caller(&mut evm)?;
+        handler.validate_against_state_and_deduct_caller(&mut evm)?;
 
         let caller_account = evm.ctx().journal().load_account(CALLER)?;
         assert_eq!(caller_account.info.balance, U256::ZERO);
@@ -481,7 +484,7 @@ mod tests {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         let mut gas = Gas::new(21000);
         gas.set_refund(10);
         gas.set_spent(10);
@@ -505,7 +508,7 @@ mod tests {
         let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         let mut gas = Gas::new(21000);
         gas.set_refund(10);
         gas.set_spent(10);
