@@ -50,7 +50,7 @@ impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
-/// - `load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
+/// - `pre_execution` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
 ///   to calculate the L1 cost of a transaction.
 /// - `validate_against_state_and_deduct_caller` - Overrides the logic to deduct the max transaction
 ///   fee, including the L1 fee, from the caller's balance.
@@ -71,7 +71,7 @@ where
     type HaltReason = HaltReason;
 
     #[inline]
-    fn load_accounts(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
+    fn pre_execution(&self, evm: &mut Self::Evm) -> Result<u64, Self::Error> {
         // only load the L1BlockInfo for txs that are not l1 messages.
         if !evm.ctx().tx().is_l1_msg() {
             let spec = evm.ctx().cfg().spec();
@@ -79,7 +79,7 @@ where
             *evm.ctx().chain() = l1_block_info;
         }
 
-        self.mainnet.load_accounts(evm)
+        self.mainnet.pre_execution(evm)
     }
 
     #[inline]
@@ -621,6 +621,28 @@ mod tests {
 
         let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
         assert_eq!(beneficiary.info.balance, U256::ZERO);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_transaction_pre_execution() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context().modify_db_chained(|db| {
+            db.cache.accounts.insert(
+                CALLER,
+                DbAccount {
+                    info: AccountInfo {
+                        balance: MIN_TRANSACTION_COST + U256::ONE,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+        });
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.pre_execution(&mut evm)?;
 
         Ok(())
     }
