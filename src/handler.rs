@@ -50,7 +50,7 @@ impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
-/// - `load_accounts` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
+/// - `pre_execution` - Adds a hook to load `L1BlockInfo` from the database such that it can be used
 ///   to calculate the L1 cost of a transaction.
 /// - `validate_against_state_and_deduct_caller` - Overrides the logic to deduct the max transaction
 ///   fee, including the L1 fee, from the caller's balance.
@@ -71,7 +71,7 @@ where
     type HaltReason = HaltReason;
 
     #[inline]
-    fn load_accounts(&self, evm: &mut Self::Evm) -> Result<(), Self::Error> {
+    fn pre_execution(&self, evm: &mut Self::Evm) -> Result<u64, Self::Error> {
         // only load the L1BlockInfo for txs that are not l1 messages.
         if !evm.ctx().tx().is_l1_msg() {
             let spec = evm.ctx().cfg().spec();
@@ -79,7 +79,13 @@ where
             *evm.ctx().chain() = l1_block_info;
         }
 
-        self.mainnet.load_accounts(evm)
+        self.validate_against_state_and_deduct_caller(evm)?;
+        self.load_accounts(evm)?;
+        // Cache EIP-7873 EOF initcodes and calculate its hash. Does nothing if not Initcode
+        // Transaction.
+        self.apply_eip7873_eof_initcodes(evm)?;
+        let gas = self.apply_eip7702_auth_list(evm)?;
+        Ok(gas)
     }
 
     #[inline]
@@ -310,6 +316,18 @@ mod tests {
             })
     }
 
+    fn context_with_funds(funds: U256) -> ScrollContext<InMemoryDB> {
+        context().modify_db_chained(|db| {
+            db.cache.accounts.insert(
+                CALLER,
+                DbAccount {
+                    info: AccountInfo { balance: funds, ..Default::default() },
+                    ..Default::default()
+                },
+            );
+        })
+    }
+
     #[test]
     fn test_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
@@ -398,10 +416,10 @@ mod tests {
 
     #[test]
     fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context();
+        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.load_accounts(&mut evm)?;
+        handler.pre_execution(&mut evm)?;
 
         let l1_block_info = evm.ctx().chain.clone();
         assert_ne!(l1_block_info, L1BlockInfo::default());
@@ -438,23 +456,11 @@ mod tests {
 
     #[test]
     fn test_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_db_chained(|db| {
-            db.cache.accounts.insert(
-                CALLER,
-                DbAccount {
-                    info: AccountInfo {
-                        balance: MIN_TRANSACTION_COST + L1_DATA_COST,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-        });
+        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.load_accounts(&mut evm)?;
-        handler.validate_against_state_and_deduct_caller(&mut evm)?;
+        handler.pre_execution(&mut evm)?;
 
         let caller_account = evm.ctx().journal().load_account(CALLER)?;
         assert_eq!(caller_account.info.balance, U256::ZERO);
@@ -579,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context();
+        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -592,7 +598,7 @@ mod tests {
             },
             0..0,
         ));
-        handler.load_accounts(&mut evm)?;
+        handler.pre_execution(&mut evm)?;
         handler.reward_beneficiary(&mut evm, &mut result)?;
 
         let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
@@ -621,6 +627,17 @@ mod tests {
 
         let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
         assert_eq!(beneficiary.info.balance, U256::ZERO);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_transaction_pre_execution() -> Result<(), Box<dyn core::error::Error>> {
+        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
+
+        let mut evm = ctx.build_scroll();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        handler.pre_execution(&mut evm)?;
 
         Ok(())
     }
