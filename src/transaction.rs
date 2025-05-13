@@ -36,8 +36,14 @@ impl Default for ScrollTransaction<TxEnv> {
 }
 
 impl<T: Transaction> Transaction for ScrollTransaction<T> {
-    type AccessListItem = T::AccessListItem;
-    type Authorization = T::Authorization;
+    type AccessListItem<'a>
+        = T::AccessListItem<'a>
+    where
+        T: 'a;
+    type Authorization<'a>
+        = T::Authorization<'a>
+    where
+        T: 'a;
 
     fn tx_type(&self) -> u8 {
         self.base.tx_type()
@@ -75,7 +81,7 @@ impl<T: Transaction> Transaction for ScrollTransaction<T> {
         self.base.gas_price()
     }
 
-    fn access_list(&self) -> Option<impl Iterator<Item = &Self::AccessListItem>> {
+    fn access_list(&self) -> Option<impl Iterator<Item = Self::AccessListItem<'_>>> {
         self.base.access_list()
     }
 
@@ -91,7 +97,7 @@ impl<T: Transaction> Transaction for ScrollTransaction<T> {
         self.base.authorization_list_len()
     }
 
-    fn authorization_list(&self) -> impl Iterator<Item = &Self::Authorization> {
+    fn authorization_list(&self) -> impl Iterator<Item = Self::Authorization<'_>> {
         self.base.authorization_list()
     }
 

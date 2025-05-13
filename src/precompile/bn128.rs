@@ -6,7 +6,7 @@ use revm::{
         },
         u64_to_address, PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
-    primitives::{Address, Bytes},
+    primitives::Address,
 };
 
 pub mod pair {
@@ -42,7 +42,7 @@ pub mod pair {
     /// # Errors
     /// - `PrecompileError::Other("BN128PairingInputOverflow: input overflow".into())` if the input
     ///   length is greater than 768 bytes.
-    fn bernoulli_run(input: &Bytes, gas_limit: u64) -> PrecompileResult {
+    fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
         if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
             return Err(PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()));
         }

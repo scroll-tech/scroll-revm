@@ -7,7 +7,7 @@ use revm::{
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::{InputsImpl, InterpreterResult},
     precompile::{self, secp256r1, PrecompileError, PrecompileWithAddress, Precompiles},
-    primitives::{Address, Bytes},
+    primitives::Address,
 };
 use revm_primitives::hardfork::SpecId;
 
@@ -33,12 +33,18 @@ impl ScrollPrecompileProvider {
         };
         Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }
+
+    /// Precompiles getter.
+    #[inline]
+    pub fn precompiles(&self) -> &'static Precompiles {
+        self.precompile_provider.precompiles
+    }
 }
 
 /// A helper function that creates a precompile that returns `PrecompileError::Other("Precompile not
 /// implemented".into())` for a given address.
 const fn precompile_not_implemented(address: Address) -> PrecompileWithAddress {
-    PrecompileWithAddress(address, |_input: &Bytes, _gas_limit: u64| {
+    PrecompileWithAddress(address, |_input: &[u8], _gas_limit: u64| {
         Err(PrecompileError::Other("NotImplemented: Precompile not implemented".into()))
     })
 }

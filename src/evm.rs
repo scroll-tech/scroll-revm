@@ -2,7 +2,7 @@ use crate::{instructions::ScrollInstructions, precompile::ScrollPrecompileProvid
 
 use crate::exec::ScrollContextTr;
 use revm::{
-    context::{Cfg, ContextSetters, ContextTr, Evm, EvmData},
+    context::{Cfg, ContextSetters, ContextTr, Evm},
     handler::{instructions::InstructionProvider, EvmTr, PrecompileProvider},
     interpreter::{interpreter::EthInterpreter, Interpreter, InterpreterAction, InterpreterTypes},
 };
@@ -22,10 +22,28 @@ impl<CTX: ScrollContextTr, INSP>
     pub fn new(ctx: CTX, inspector: INSP) -> Self {
         let spec = ctx.cfg().spec();
         Self(Evm {
-            data: EvmData { ctx, inspector },
+            ctx,
+            inspector,
             instruction: ScrollInstructions::new_mainnet(),
             precompiles: ScrollPrecompileProvider::new_with_spec(spec),
         })
+    }
+}
+
+impl<CTX, INSP, I, P> ScrollEvm<CTX, INSP, I, P> {
+    /// Consumed self and returns a new Evm type with given Inspector.
+    pub fn with_inspector<NINSP>(self, inspector: NINSP) -> ScrollEvm<CTX, NINSP, I, P> {
+        ScrollEvm(self.0.with_inspector(inspector))
+    }
+
+    /// Consumes self and returns a new Evm type with given Precompiles.
+    pub fn with_precompiles<NP>(self, precompiles: NP) -> ScrollEvm<CTX, INSP, I, NP> {
+        ScrollEvm(self.0.with_precompiles(precompiles))
+    }
+
+    /// Consumes self and returns the inner Inspector.
+    pub fn into_inspector(self) -> INSP {
+        self.0.into_inspector()
     }
 }
 
@@ -49,25 +67,25 @@ where
         >,
     ) -> <<Self::Instructions as InstructionProvider>::InterpreterTypes as InterpreterTypes>::Output
     {
-        let context = &mut self.0.data.ctx;
+        let context = &mut self.0.ctx;
         let instructions = &mut self.0.instruction;
         interpreter.run_plain(instructions.instruction_table(), context)
     }
 
     fn ctx(&mut self) -> &mut Self::Context {
-        &mut self.0.data.ctx
+        &mut self.0.ctx
     }
 
     fn ctx_ref(&self) -> &Self::Context {
-        &self.0.data.ctx
+        &self.0.ctx
     }
 
     fn ctx_instructions(&mut self) -> (&mut Self::Context, &mut Self::Instructions) {
-        (&mut self.0.data.ctx, &mut self.0.instruction)
+        (&mut self.0.ctx, &mut self.0.instruction)
     }
 
     fn ctx_precompiles(&mut self) -> (&mut Self::Context, &mut Self::Precompiles) {
-        (&mut self.0.data.ctx, &mut self.0.precompiles)
+        (&mut self.0.ctx, &mut self.0.precompiles)
     }
 }
 
@@ -84,11 +102,11 @@ where
     type Inspector = INSP;
 
     fn inspector(&mut self) -> &mut Self::Inspector {
-        &mut self.0.data.inspector
+        &mut self.0.inspector
     }
 
     fn ctx_inspector(&mut self) -> (&mut Self::Context, &mut Self::Inspector) {
-        (&mut self.0.data.ctx, &mut self.0.data.inspector)
+        (&mut self.0.ctx, &mut self.0.inspector)
     }
 
     fn run_inspect_interpreter(
