@@ -52,5 +52,6 @@ fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
         return Err(PrecompileError::Other("ModexpModOverflow: modexp mod overflow".into()));
     }
 
-    run_inner(input, gas_limit, 200, berlin_gas_calc)
+    const OSAKA: bool = false;
+    run_inner::<_, OSAKA>(input, gas_limit, 200, berlin_gas_calc)
 }
