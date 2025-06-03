@@ -46,8 +46,8 @@ where
     WIRE: InterpreterTypes,
     HOST: ScrollContextTr,
 {
-    pub fn new_mainnet() -> Self {
-        Self::new(make_scroll_instruction_table::<WIRE, HOST>())
+    pub fn new_mainnet(spec: ScrollSpecId) -> Self {
+        Self::new(make_scroll_instruction_table::<WIRE, HOST>(spec))
     }
 
     pub fn new(base_table: InstructionTable<WIRE, HOST>) -> Self {
@@ -65,16 +65,21 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
+    spec: ScrollSpecId,
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
-    table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
     table[opcode::BASEFEE as usize] = basefee::<WIRE, HOST>;
     table[opcode::TSTORE as usize] = tstore::<WIRE, HOST>;
     table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
     table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
+
+    // override blockhash opcode in pre-feynman blocks
+    if !spec.is_enabled_in(ScrollSpecId::FEYNMAN) {
+        table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
+    }
 
     table
 }
