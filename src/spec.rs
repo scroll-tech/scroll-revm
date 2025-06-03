@@ -36,12 +36,12 @@ impl ScrollSpecId {
     /// Converts the `ScrollSpecId` to a `SpecId`.
     const fn into_eth_spec_id(self) -> SpecId {
         match self {
-            Self::SHANGHAI
-            | Self::BERNOULLI
-            | Self::CURIE
-            | Self::DARWIN
-            | Self::EUCLID
-            | Self::FEYNMAN => SpecId::SHANGHAI,
+            Self::SHANGHAI |
+            Self::BERNOULLI |
+            Self::CURIE |
+            Self::DARWIN |
+            Self::EUCLID |
+            Self::FEYNMAN => SpecId::SHANGHAI,
         }
     }
 }
