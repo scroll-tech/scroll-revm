@@ -29,7 +29,7 @@ impl ScrollPrecompileProvider {
         let precompiles = match spec {
             ScrollSpecId::SHANGHAI => pre_bernoulli(),
             ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
-            ScrollSpecId::EUCLID => euclid(),
+            ScrollSpecId::EUCLID | ScrollSpecId::FEYNMAN => euclid(),
         };
         Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }

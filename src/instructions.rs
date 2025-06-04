@@ -46,8 +46,8 @@ where
     WIRE: InterpreterTypes,
     HOST: ScrollContextTr,
 {
-    pub fn new_mainnet() -> Self {
-        Self::new(make_scroll_instruction_table::<WIRE, HOST>())
+    pub fn new_mainnet(spec: ScrollSpecId) -> Self {
+        Self::new(make_scroll_instruction_table::<WIRE, HOST>(spec))
     }
 
     pub fn new(base_table: InstructionTable<WIRE, HOST>) -> Self {
@@ -65,16 +65,21 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
+    spec: ScrollSpecId,
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
-    table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
     table[opcode::BASEFEE as usize] = basefee::<WIRE, HOST>;
     table[opcode::TSTORE as usize] = tstore::<WIRE, HOST>;
     table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
     table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
+
+    // override blockhash opcode in pre-feynman blocks
+    if !spec.is_enabled_in(ScrollSpecId::FEYNMAN) {
+        table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
+    }
 
     table
 }
@@ -203,4 +208,66 @@ fn compute_block_hash(chain_id: u64, block_number: u64) -> U256 {
     input[..8].copy_from_slice(&chain_id.to_be_bytes());
     input[8..].copy_from_slice(&block_number.to_be_bytes());
     U256::from_be_bytes(keccak256(input).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use revm::{
+        bytecode::{opcode::*, Bytecode},
+        database::{EmptyDB, InMemoryDB},
+        interpreter::Interpreter,
+        primitives::{Bytes, U256},
+        DatabaseRef,
+    };
+
+    use crate::{
+        builder::{DefaultScrollContext, ScrollContext},
+        ScrollSpecId::*,
+    };
+
+    use super::{compute_block_hash, make_scroll_instruction_table};
+
+    #[test]
+    fn test_blockhash_before_feynman() {
+        let (chain_id, current_block, target_block, spec) = (123, 1024, 1000, EUCLID);
+
+        let db = EmptyDB::new();
+        let mut context = ScrollContext::scroll().with_db(InMemoryDB::new(db));
+        context.modify_block(|block| block.number = current_block);
+        context.modify_cfg(|cfg| cfg.chain_id = chain_id);
+        context.modify_cfg(|cfg| cfg.spec = spec);
+
+        let instructions = make_scroll_instruction_table(spec);
+
+        let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
+        let mut interpreter = Interpreter::default().with_bytecode(bytecode);
+        let _ = interpreter.stack.push(U256::from(target_block));
+        interpreter.run_plain(&instructions, &mut context);
+
+        let expected = compute_block_hash(chain_id, target_block);
+        let actual = interpreter.stack.pop().expect("stack is not empty");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_blockhash_after_feynman() {
+        let (chain_id, current_block, target_block, spec) = (123, 1024, 1000, FEYNMAN);
+
+        let db = EmptyDB::new();
+        let mut context = ScrollContext::scroll().with_db(InMemoryDB::new(db));
+        context.modify_block(|block| block.number = current_block);
+        context.modify_cfg(|cfg| cfg.chain_id = chain_id);
+        context.modify_cfg(|cfg| cfg.spec = spec);
+
+        let instructions = make_scroll_instruction_table(spec);
+
+        let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
+        let mut interpreter = Interpreter::default().with_bytecode(bytecode);
+        let _ = interpreter.stack.push(U256::from(target_block));
+        interpreter.run_plain(&instructions, &mut context);
+
+        let expected = db.block_hash_ref(target_block).expect("db contains block hash").into();
+        let actual = interpreter.stack.pop().expect("stack is not empty");
+        assert_eq!(actual, expected);
+    }
 }
