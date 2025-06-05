@@ -148,8 +148,6 @@ impl Default for ScrollPrecompileProvider {
 
 #[cfg(test)]
 mod tests {
-    use core::u64;
-
     use super::*;
     use crate::precompile::bn128::pair::BN128_PAIRING_PRECOMPILE_ADDRESS;
     use revm::primitives::hex;
