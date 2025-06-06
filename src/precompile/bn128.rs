@@ -19,7 +19,7 @@ pub mod pair {
     const BN128_PAIRING_PRECOMPILE_INDEX: u64 = 8;
 
     /// The BN128 pairing precompile address.
-    const BN128_PAIRING_PRECOMPILE_ADDRESS: Address =
+    pub const BN128_PAIRING_PRECOMPILE_ADDRESS: Address =
         u64_to_address(BN128_PAIRING_PRECOMPILE_INDEX);
 
     /// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
@@ -48,4 +48,10 @@ pub mod pair {
         }
         run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
     }
+
+    /// The BN128 PAIRING precompile with address.
+    pub const FEYNMAN: PrecompileWithAddress =
+        PrecompileWithAddress(BN128_PAIRING_PRECOMPILE_ADDRESS, |input, gas_limit| {
+            run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
+        });
 }
