@@ -42,6 +42,12 @@ const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
 /// The L1 blob scalar storage slot.
 const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 
+/// The L1 compression scalar storage slot.
+const L1_COMPRESSION_SCALAR_SLOT: U256 = U256::from_limbs([8u64, 0, 0, 0]);
+
+/// The L1 proof verification scalar storage slot.
+const L1_VERIFICATION_SCALAR_SLOT: U256 = U256::from_limbs([9u64, 0, 0, 0]);
+
 // L1 BLOCK INFO
 // ================================================================================================
 
@@ -65,6 +71,10 @@ pub struct L1BlockInfo {
     pub l1_blob_scalar: Option<U256>,
     /// The current call data gas (l1_blob_scalar * l1_base_fee), None if before Curie.
     pub calldata_gas: Option<U256>,
+    /// The current L1 DA compression scalar, None if before Feynman.
+    pub l1_compression_scalar: Option<U256>,
+    /// The current L1 proof verification scalar, None if before Feynman.
+    pub l1_verification_scalar: Option<U256>,
 }
 
 impl L1BlockInfo {
@@ -92,6 +102,25 @@ impl L1BlockInfo {
         let l1_blob_scalar = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, L1_BLOB_SCALAR_SLOT)?;
         let calldata_gas = l1_commit_scalar.saturating_mul(l1_base_fee);
 
+        // If Feynman is not enabled, return the L1 block info without Feynman fields.
+        if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
+            return Ok(L1BlockInfo {
+                l1_base_fee,
+                l1_fee_overhead,
+                l1_base_fee_scalar,
+                l1_blob_base_fee: Some(l1_blob_base_fee),
+                l1_commit_scalar: Some(l1_commit_scalar),
+                l1_blob_scalar: Some(l1_blob_scalar),
+                calldata_gas: Some(calldata_gas),
+                ..Default::default()
+            });
+        }
+
+        let l1_compression_scalar =
+            db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, L1_COMPRESSION_SCALAR_SLOT)?;
+        let l1_verification_scalar =
+            db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, L1_VERIFICATION_SCALAR_SLOT)?;
+
         Ok(L1BlockInfo {
             l1_base_fee,
             l1_fee_overhead,
@@ -100,6 +129,8 @@ impl L1BlockInfo {
             l1_commit_scalar: Some(l1_commit_scalar),
             l1_blob_scalar: Some(l1_blob_scalar),
             calldata_gas: Some(calldata_gas),
+            l1_compression_scalar: Some(l1_compression_scalar),
+            l1_verification_scalar: Some(l1_verification_scalar),
         })
     }
 
@@ -136,12 +167,65 @@ impl L1BlockInfo {
         self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION)
     }
 
+    fn calculate_tx_l1_cost_feynman(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
+        // rollup_fee(tx) = compression_ratio(tx) * size(tx) * (component_exec + component_blob)
+        //
+        // - compression_ratio(tx): estimated compression ratio of RLP-encoded signed tx data,
+        // derived by plugging in this tx into the previous finalised batch. This gives us an idea
+        // as to how compressible is the zstd-encoding of the data in this tx.
+        //
+        // - size(tx): denotes the size of the RLP-encoded signed tx data.
+        //
+        // - component_exec: The component that accounts towards commiting this tx as part of a L2
+        // batch as well as gas costs for the eventual on-chain proof verification.
+        // => (compression_scalar + commit_scalar + verification_scalar) * l1_base_fee
+        //
+        // - component_blob: The component that accounts the costs associated with data
+        // availability, i.e. the costs of posting this tx's data in the EIP-4844 blob.
+        // => (compression_scalar + blob_scalar) * l1_blob_base_fee
+        let component_exec = {
+            let compression_scalar = self
+                .l1_compression_scalar
+                .unwrap_or_else(|| panic!("compression scalar in spec_id={:?}", spec_id));
+            let commit_scalar = self
+                .l1_commit_scalar
+                .unwrap_or_else(|| panic!("l1 commit scalar in spec_id={:?}", spec_id));
+            let verification_scalar = self
+                .l1_verification_scalar
+                .unwrap_or_else(|| panic!("verification scalar in spec_id={:?}", spec_id));
+            compression_scalar.saturating_add(commit_scalar).saturating_add(verification_scalar)
+        };
+        let component_blob = {
+            let compression_scalar = self
+                .l1_compression_scalar
+                .unwrap_or_else(|| panic!("compression scalar in spec_id={:?}", spec_id));
+            let blob_scalar = self
+                .l1_blob_scalar
+                .unwrap_or_else(|| panic!("l1 blob scalar in spec_id={:?}", spec_id));
+            compression_scalar.saturating_add(blob_scalar)
+        };
+
+        // Assume compression_ratio = 1 until we have specification for estimating compression
+        // ratio based on previous finalised batches.
+        let compression_ratio = |_input: &[u8]| -> U256 { U256::ONE };
+
+        // size(tx) is just the length of the RLP-encoded signed tx data.
+        let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
+
+        compression_ratio(input)
+            .saturating_mul(tx_size(input))
+            .saturating_mul(component_exec.saturating_add(component_blob))
+            .wrapping_div(TX_L1_FEE_PRECISION)
+    }
+
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
     pub fn calculate_tx_l1_cost(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
         if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
-        } else {
+        } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
+        } else {
+            self.calculate_tx_l1_cost_feynman(input, spec_id)
         }
     }
 }
