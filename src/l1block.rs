@@ -42,6 +42,8 @@ const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
 /// The L1 blob scalar storage slot.
 const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 
+const U64_MAX: U256 = U256::from_limbs([u64::MAX, 0, 0, 0]);
+
 // L1 BLOCK INFO
 // ================================================================================================
 
@@ -138,10 +140,11 @@ impl L1BlockInfo {
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
     pub fn calculate_tx_l1_cost(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
-        if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
+        let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
         } else {
             self.calculate_tx_l1_cost_curie(input, spec_id)
-        }
+        };
+        l1_cost.min(U64_MAX)
     }
 }
