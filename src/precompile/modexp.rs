@@ -1,6 +1,6 @@
 use revm::{
     precompile::{
-        modexp::{berlin_gas_calc, run_inner, osaka_gas_calc},
+        modexp::{berlin_gas_calc, osaka_gas_calc, run_inner},
         u64_to_address,
         utilities::right_pad_with_offset,
         PrecompileError, PrecompileResult, PrecompileWithAddress,
@@ -61,7 +61,5 @@ pub const FEYNMAN: PrecompileWithAddress =
     PrecompileWithAddress(MODEXP_PRECOMPILE_ADDRESS, feynman_run);
 
 pub fn feynman_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
-    run_inner::<_, true>(input, gas_limit, 500, |a, b, c, d| {
-        osaka_gas_calc(a, b, c, d)
-    })
+    run_inner::<_, true>(input, gas_limit, 500, |a, b, c, d| osaka_gas_calc(a, b, c, d))
 }
