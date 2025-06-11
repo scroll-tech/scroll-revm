@@ -98,6 +98,7 @@ pub(crate) fn feynman() -> &'static Precompiles {
     INSTANCE.get_or_init(|| {
         let mut precompiles = euclid().clone();
         precompiles.extend([bn128::pair::FEYNMAN]);
+        precompiles.extend([modexp::FEYNMAN]);
         Box::new(precompiles)
     })
 }
