@@ -61,5 +61,6 @@ pub const FEYNMAN: PrecompileWithAddress =
     PrecompileWithAddress(MODEXP_PRECOMPILE_ADDRESS, feynman_run);
 
 pub fn feynman_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
-    run_inner::<_, true>(input, gas_limit, 500, |a, b, c, d| osaka_gas_calc(a, b, c, d))
+    const OSAKA: bool = true;
+    run_inner::<_, OSAKA>(input, gas_limit, 500, |a, b, c, d| osaka_gas_calc(a, b, c, d))
 }
