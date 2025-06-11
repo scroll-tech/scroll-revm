@@ -141,16 +141,16 @@ impl L1BlockInfo {
     fn calculate_tx_l1_cost_feynman(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
         // rollup_fee(tx) = compression_ratio(tx) * size(tx) * (component_exec + component_blob)
         //
-        // - compression_ratio(tx): estimated compression ratio of RLP-encoded signed tx data,
-        // derived by plugging in this tx into the previous finalised batch. This gives us an idea
-        // as to how compressible is the zstd-encoding of the data in this tx.
+        // - compression_ratio(tx): estimated compressibility of the signed tx data. The tx is
+        // eventually a part of a L2 batch that should likely result in a better compression ratio,
+        // however a conservative estimate is the size of zstd-encoding of the signed tx.
         //
-        // - size(tx): denotes the size of the RLP-encoded signed tx data.
+        // - size(tx): denotes the size of the signed tx.
         //
         // - component_exec: The component that accounts towards commiting this tx as part of a L2
         // batch as well as gas costs for the eventual on-chain proof verification.
         // => (compression_scalar + commit_scalar + verification_scalar) * l1_base_fee
-        // => (new_commit_scalar) * l1_base_fee
+        // => (exec_scalar) * l1_base_fee
         //
         // - component_blob: The component that accounts the costs associated with data
         // availability, i.e. the costs of posting this tx's data in the EIP-4844 blob.
@@ -162,22 +162,25 @@ impl L1BlockInfo {
         let component_exec = {
             let exec_scalar = self
                 .l1_commit_scalar
-                .unwrap_or_else(|| panic!("exec scalar in spec_id={:?}", spec_id));
+                .unwrap_or_else(|| panic!("missing exec scalar in spec_id={:?}", spec_id));
             exec_scalar.saturating_mul(self.l1_base_fee)
         };
         let component_blob = {
             let blob_scalar = self
                 .l1_blob_scalar
-                .unwrap_or_else(|| panic!("l1 blob scalar in spec_id={:?}", spec_id));
+                .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={:?}", spec_id));
             let blob_base_fee = self
                 .l1_blob_base_fee
-                .unwrap_or_else(|| panic!("l1 blob base fee in spec_id={:?}", spec_id));
+                .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={:?}", spec_id));
             blob_scalar.saturating_mul(blob_base_fee)
         };
 
         // Assume compression_ratio = 1 until we have specification for estimating compression
         // ratio based on previous finalised batches.
-        let compression_ratio = |_input: &[u8]| -> U256 { U256::ONE };
+        //
+        // We use the `TX_L1_FEE_PRECISION` to allow fractions. We then divide the overall product
+        // by the precision value as well.
+        let compression_ratio = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
 
         // size(tx) is just the length of the RLP-encoded signed tx data.
         let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
