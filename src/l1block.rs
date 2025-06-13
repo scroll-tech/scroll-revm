@@ -141,9 +141,10 @@ impl L1BlockInfo {
     }
 
     fn calculate_tx_l1_cost_feynman(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
-        // rollup_fee(tx) = compression_ratio(tx) * size(tx) * (component_exec + component_blob)
+        // rollup_fee(tx) = compression_factor(tx) * size(tx) * (component_exec + component_blob)
         //
-        // - compression_ratio(tx): estimated compressibility of the signed tx data. The tx is
+        // - compression_factor(tx): compression_factor = 1 / compression_ratio, where
+        // compression_ratio is the estimated compressibility of the signed tx data. The tx is
         // eventually a part of a L2 batch that should likely result in a better compression ratio,
         // however a conservative estimate is the size of zstd-encoding of the signed tx.
         //
@@ -177,17 +178,17 @@ impl L1BlockInfo {
             blob_scalar.saturating_mul(blob_base_fee)
         };
 
-        // Assume compression_ratio = 1 until we have specification for estimating compression
+        // Assume compression_factor = 1 until we have specification for estimating compression
         // ratio based on previous finalised batches.
         //
         // We use the `TX_L1_FEE_PRECISION` to allow fractions. We then divide the overall product
         // by the precision value as well.
-        let compression_ratio = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
+        let compression_factor = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
 
         // size(tx) is just the length of the RLP-encoded signed tx data.
         let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
 
-        compression_ratio(input)
+        compression_factor(input)
             .saturating_mul(tx_size(input))
             .saturating_mul(component_exec.saturating_add(component_blob))
             .wrapping_div(TX_L1_FEE_PRECISION)
