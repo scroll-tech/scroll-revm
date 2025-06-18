@@ -20,25 +20,13 @@ pub trait ScrollTxTr: Transaction {
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
 /// the l1 fee computation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScrollTransaction<T: Transaction> {
     pub base: T,
     pub rlp_bytes: Option<Bytes>,
     pub compression_factor: Option<U256>,
 }
-
-// We implement PartialEq and Eq for ScrollTransaction to allow comparing transactions
-// based on their base transaction and RLP bytes. It should be noted that this comparison does not
-// take into account the `compression_factor`. This is because `f64` does not implement `PartialEq`
-// or `Eq`, so we cannot use it directly in the trait bounds.
-impl<T: Transaction + PartialEq> PartialEq for ScrollTransaction<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.base == other.base && self.rlp_bytes == other.rlp_bytes
-    }
-}
-
-impl<T: Transaction + Eq> Eq for ScrollTransaction<T> {}
 
 impl<T: Transaction> ScrollTransaction<T> {
     pub fn new(base: T, rlp_bytes: Option<Bytes>, compression_factor: Option<U256>) -> Self {
