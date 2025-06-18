@@ -167,6 +167,11 @@ impl L1BlockInfo {
         //
         // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
         // re-used/updated for the new values post-FEYNMAN.
+        assert!(
+            compression_factor < U256::from(1),
+            "transaction compression factor must be less than 1"
+        );
+
         let component_exec = {
             let exec_scalar = self
                 .l1_commit_scalar
