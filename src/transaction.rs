@@ -12,26 +12,43 @@ pub trait ScrollTxTr: Transaction {
     /// The RLP encoded transaction bytes which are used to calculate the cost associated with
     /// posting the transaction on L1.
     fn rlp_bytes(&self) -> Option<&Bytes>;
+
+    /// The compression factor of the transaction which is used to calculate the cost associated
+    /// with posting the transaction on L1.
+    fn compression_factor(&self) -> Option<U256>;
 }
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
 /// the l1 fee computation.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScrollTransaction<T: Transaction> {
     pub base: T,
     pub rlp_bytes: Option<Bytes>,
+    pub compression_factor: Option<U256>,
 }
 
+// We implement PartialEq and Eq for ScrollTransaction to allow comparing transactions
+// based on their base transaction and RLP bytes. It should be noted that this comparison does not
+// take into account the `compression_factor`. This is because `f64` does not implement `PartialEq`
+// or `Eq`, so we cannot use it directly in the trait bounds.
+impl<T: Transaction + PartialEq> PartialEq for ScrollTransaction<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.base == other.base && self.rlp_bytes == other.rlp_bytes
+    }
+}
+
+impl<T: Transaction + Eq> Eq for ScrollTransaction<T> {}
+
 impl<T: Transaction> ScrollTransaction<T> {
-    pub fn new(base: T, rlp_bytes: Option<Bytes>) -> Self {
-        Self { base, rlp_bytes }
+    pub fn new(base: T, rlp_bytes: Option<Bytes>, compression_factor: Option<U256>) -> Self {
+        Self { base, rlp_bytes, compression_factor }
     }
 }
 
 impl Default for ScrollTransaction<TxEnv> {
     fn default() -> Self {
-        Self { base: TxEnv::default(), rlp_bytes: None }
+        Self { base: TxEnv::default(), rlp_bytes: None, compression_factor: None }
     }
 }
 
@@ -113,5 +130,9 @@ impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
 
     fn rlp_bytes(&self) -> Option<&Bytes> {
         self.rlp_bytes.as_ref()
+    }
+
+    fn compression_factor(&self) -> Option<U256> {
+        self.compression_factor
     }
 }

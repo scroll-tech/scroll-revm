@@ -140,7 +140,12 @@ impl L1BlockInfo {
         self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION)
     }
 
-    fn calculate_tx_l1_cost_feynman(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
+    fn calculate_tx_l1_cost_feynman(
+        &self,
+        input: &[u8],
+        spec_id: ScrollSpecId,
+        compression_factor: U256,
+    ) -> U256 {
         // rollup_fee(tx) = compression_factor(tx) * size(tx) * (component_exec + component_blob)
         //
         // - compression_factor(tx): compression_factor = 1 / compression_ratio, where
@@ -183,12 +188,12 @@ impl L1BlockInfo {
         //
         // We use the `TX_L1_FEE_PRECISION` to allow fractions. We then divide the overall product
         // by the precision value as well.
-        let compression_factor = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
+        // let compression_factor = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
 
         // size(tx) is just the length of the RLP-encoded signed tx data.
         let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
 
-        compression_factor(input)
+        compression_factor
             .saturating_mul(tx_size(input))
             .saturating_mul(component_exec.saturating_add(component_blob))
             .wrapping_div(TX_L1_FEE_PRECISION)
@@ -196,13 +201,21 @@ impl L1BlockInfo {
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
-    pub fn calculate_tx_l1_cost(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
+    pub fn calculate_tx_l1_cost(
+        &self,
+        input: &[u8],
+        spec_id: ScrollSpecId,
+        compression_factor: Option<U256>,
+    ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
         } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
         } else {
-            self.calculate_tx_l1_cost_feynman(input, spec_id)
+            let compression_factor = compression_factor.unwrap_or_else(|| {
+                panic!("compression factor should be set in spec_id={:?}", spec_id)
+            });
+            self.calculate_tx_l1_cost_feynman(input, spec_id, compression_factor)
         };
         l1_cost.min(U64_MAX)
     }

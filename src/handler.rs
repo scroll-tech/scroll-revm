@@ -113,8 +113,10 @@ where
                     "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
                 ));
             };
+
             // Deduct l1 fee from caller.
-            let tx_l1_cost = l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec);
+            let tx_l1_cost =
+                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_factor());
             let caller_account = ctx.journal().load_account(caller)?;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
@@ -225,7 +227,11 @@ where
                 "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
             ));
         };
-        let l1_cost = l1_block_info.calculate_tx_l1_cost(rlp_bytes, ctx.cfg().spec());
+        let l1_cost = l1_block_info.calculate_tx_l1_cost(
+            rlp_bytes,
+            ctx.cfg().spec(),
+            ctx.tx().compression_factor(),
+        );
 
         // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark
         // the account as touched.
