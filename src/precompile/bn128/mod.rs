@@ -18,14 +18,12 @@ cfg_if::cfg_if! {
             encode_g1_point, g1_point_add, g1_point_mul, pairing_check, read_g1_point, read_g2_point,
             read_scalar,
         };
-    } else if #[cfg(feature = "arkworks")] {
+    } else {
         mod arkworks;
         use arkworks::{
             encode_g1_point, g1_point_add, g1_point_mul, pairing_check, read_g1_point, read_g2_point,
             read_scalar,
         };
-    } else {
-        compile_error!("At least one of the features 'bn', 'arkworks', or 'openvm' must be enabled for bn128 precompiles.");
     }
 }
 
