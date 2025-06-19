@@ -58,12 +58,12 @@ pub(crate) fn pre_bernoulli() -> &'static Precompiles {
 
         precompiles.extend([
             precompile::secp256k1::ECRECOVER,
-            hash::sha256::SHA256_SHANGHAI,
-            hash::ripemd160::RIPEMD160_SHANGHAI,
+            hash::sha256::SHANGHAI,
+            hash::ripemd160::SHANGHAI,
             precompile::identity::FUN,
             modexp::BERNOULLI,
-            precompile::bn128::add::ISTANBUL,
-            precompile::bn128::mul::ISTANBUL,
+            bn128::add::ISTANBUL,
+            bn128::mul::ISTANBUL,
             bn128::pair::BERNOULLI,
             blake2::SHANGHAI,
         ]);
@@ -77,7 +77,7 @@ pub(crate) fn bernoulli() -> &'static Precompiles {
     static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = pre_bernoulli().clone();
-        precompiles.extend([hash::sha256::SHA256_BERNOULLI]);
+        precompiles.extend([hash::sha256::BERNOULLI]);
         Box::new(precompiles)
     })
 }
@@ -149,7 +149,7 @@ impl Default for ScrollPrecompileProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::precompile::bn128::pair::BN128_PAIRING_PRECOMPILE_ADDRESS;
+    use crate::precompile::bn128::pair;
     use revm::primitives::hex;
 
     #[test]
@@ -162,12 +162,12 @@ mod tests {
                 .unwrap();
 
         // Euclid version should reject this input
-        let f = euclid().get(&BN128_PAIRING_PRECOMPILE_ADDRESS).expect("precompile exists");
+        let f = euclid().get(&pair::ADDRESS).expect("precompile exists");
         let outcome = f(&input, u64::MAX);
         assert!(outcome.is_err());
 
         // Feynman version should accept this input
-        let f = feynman().get(&BN128_PAIRING_PRECOMPILE_ADDRESS).expect("precompile exists");
+        let f = feynman().get(&pair::ADDRESS).expect("precompile exists");
         let outcome = f(&input, u64::MAX).expect("call succeeds");
         assert_eq!(outcome.bytes, expected);
     }

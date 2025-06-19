@@ -1,7 +1,6 @@
 use revm::{
     precompile::{
         modexp::{berlin_gas_calc, run_inner},
-        u64_to_address,
         utilities::right_pad_with_offset,
         PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
@@ -11,11 +10,8 @@ use revm::{
 // CONSTANTS
 // ================================================================================================
 
-/// The MODEXP precompile index.
-const MODEXP_PRECOMPILE_INDEX: u64 = 5;
-
 /// The MODEXP precompile address.
-const MODEXP_PRECOMPILE_ADDRESS: Address = u64_to_address(MODEXP_PRECOMPILE_INDEX);
+const ADDRESS: Address = revm::precompile::modexp::OSAKA.0;
 
 /// The maximum length of the input for the MODEXP precompile.
 const SCROLL_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
@@ -24,8 +20,7 @@ const SCROLL_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
 // ================================================================================================
 
 /// The bernoulli MODEXP precompile implementation with address.
-pub const BERNOULLI: PrecompileWithAddress =
-    PrecompileWithAddress(MODEXP_PRECOMPILE_ADDRESS, bernoulli_run);
+pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(ADDRESS, bernoulli_run);
 
 /// The bernoulli MODEXP precompile implementation.
 ///
