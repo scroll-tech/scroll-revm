@@ -26,11 +26,11 @@ ark-ec = { version = "0.5", default-features = false }
 ark-ff = { version = "0.5", default-features = false, features = ["asm"] }
 ark-serialize = { version = "0.5", default-features = false }
 
-
 # openvm
-openvm-ecc-guest = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7", optional = true }
-openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7", optional = true }
-openvm-pairing = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7", optional = true }
+[target.'cfg(all(target_os = "zkvm", not(target_vendor = "succinct"), target_arch = "riscv32"))'.dependencies]
+openvm-ecc-guest = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7" }
+openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7" }
+openvm-pairing = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7", features = ["bn254"] }
 
 [features]
 default = ["std", "c-kzg", "secp256k1", "portable", "blst"]
@@ -48,10 +48,7 @@ blst = ["revm/blst"]
 
 # bn128 related
 bn = ["revm/bn", "dep:bn"]
+openvm = []
 
-openvm = [
-    "dep:openvm-ecc-guest",
-    "dep:openvm-sha2",
-    "dep:openvm-pairing",
-    "openvm-pairing/bn254",
-]
+[lints.rust]
+unexpected-cfgs = "allow"

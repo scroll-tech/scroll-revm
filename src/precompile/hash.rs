@@ -3,8 +3,8 @@ use super::precompile_not_implemented;
 use revm::{precompile::PrecompileWithAddress, primitives::Address};
 
 pub mod sha256 {
-    use revm::precompile::PrecompileResult;
     use super::*;
+    use revm::precompile::PrecompileResult;
 
     // CONSTANTS
     // ------------------------------------------------------------------------------------------------
@@ -26,7 +26,7 @@ pub mod sha256 {
 
     pub fn run(input: &[u8], gas_limit: u64) -> PrecompileResult {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "openvm")] {
+            if #[cfg(all(target_os = "zkvm", not(target_vendor = "succinct"), target_arch = "riscv32", feature = "openvm"))] {
                 use revm::precompile::{calc_linear_cost_u32, PrecompileError, PrecompileOutput};
                 let cost = calc_linear_cost_u32(input.len(), 60, 12);
                 if cost > gas_limit {
@@ -36,7 +36,7 @@ pub mod sha256 {
                     Ok(PrecompileOutput::new(cost, output.to_vec().into()))
                 }
             } else {
-                    return revm::precompile::hash::sha256_run(input, gas_limit);
+                revm::precompile::hash::sha256_run(input, gas_limit)
             }
         }
     }
