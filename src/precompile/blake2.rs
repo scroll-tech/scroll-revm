@@ -1,18 +1,12 @@
 use super::precompile_not_implemented;
 
-use revm::{
-    precompile::{u64_to_address, PrecompileWithAddress},
-    primitives::Address,
-};
+use revm::{precompile::PrecompileWithAddress, primitives::Address};
 
 // CONSTANTS
 // ================================================================================================
 
-/// The BLAKE2 precompile index.
-const BLAKE2_PRECOMPILE_INDEX: u64 = 9;
-
 /// The BLAKE2 precompile address.
-const BLAKE2_PRECOMPILE_ADDRESS: Address = u64_to_address(BLAKE2_PRECOMPILE_INDEX);
+const ADDRESS: Address = revm::precompile::blake2::FUN.0;
 
 // BLAKE2 PRECOMPILE
 // ================================================================================================
@@ -21,4 +15,4 @@ const BLAKE2_PRECOMPILE_ADDRESS: Address = u64_to_address(BLAKE2_PRECOMPILE_INDE
 ///
 /// This precompile is not implemented and will return `PrecompileError::Other("Precompile not
 /// implemented".into())`.
-pub const SHANGHAI: PrecompileWithAddress = precompile_not_implemented(BLAKE2_PRECOMPILE_ADDRESS);
+pub const SHANGHAI: PrecompileWithAddress = precompile_not_implemented(ADDRESS);

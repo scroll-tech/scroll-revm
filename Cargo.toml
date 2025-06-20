@@ -11,10 +11,26 @@ revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "feat/
 revm-inspector = { git = "https://github.com/scroll-tech/revm", branch = "feat/reth-v74", default-features = false }
 
 # misc
+cfg-if = "1.0"
 auto_impl = "1.2.0"
 enumn = { version = "0.1" }
 once_cell = { version = "1.19", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", features = ["derive"], optional = true, default-features = false }
+
+# Optionally use substrate implementation for eip1962
+bn = { package = "substrate-bn", version = "0.6", default-features = false, optional = true }
+
+# Use arkworks implementation for eip1962
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.5", default-features = false }
+ark-ff = { version = "0.5", default-features = false, features = ["asm"] }
+ark-serialize = { version = "0.5", default-features = false }
+
+# openvm
+[target.'cfg(all(target_os = "zkvm", not(target_vendor = "succinct"), target_arch = "riscv32"))'.dependencies]
+openvm-ecc-guest = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7" }
+openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7" }
+openvm-pairing = { git = "https://github.com/openvm-org/openvm.git", rev = "9ef822c947f14eb436e293971c969cfcb688dbe7", features = ["bn254"] }
 
 [features]
 default = ["std", "c-kzg", "secp256k1", "portable", "blst"]
@@ -29,3 +45,10 @@ c-kzg = ["revm/c-kzg"]
 # `kzg-rs` is not audited but useful for `no_std` environment, use it with causing and default to `c-kzg` if possible.
 kzg-rs = ["revm/kzg-rs"]
 blst = ["revm/blst"]
+
+# bn128 related
+bn = ["revm/bn", "dep:bn"]
+openvm = []
+
+[lints.rust]
+unexpected-cfgs = "allow"
