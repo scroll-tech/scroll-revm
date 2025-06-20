@@ -11,10 +11,10 @@ use revm::{
 };
 use revm_primitives::hardfork::SpecId;
 
-mod blake2;
-mod bn128;
-mod hash;
-mod modexp;
+pub mod blake2;
+pub mod bn128;
+pub mod hash;
+pub mod modexp;
 
 /// Provides Scroll precompiles, modifying any relevant behaviour.
 #[derive(Debug, Clone)]
