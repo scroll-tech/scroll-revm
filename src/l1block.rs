@@ -45,6 +45,12 @@ const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
 /// The L1 blob scalar storage slot.
 const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 
+/// The compression penalty threshold storage slot.
+const PENALTY_THRESHOLD_SLOT: U256 = U256::from_limbs([9u64, 0, 0, 0]);
+
+/// The compression penalty factor storage slot.
+const PENALTY_FACTOR_SLOT: U256 = U256::from_limbs([10u64, 0, 0, 0]);
+
 const U64_MAX: U256 = U256::from_limbs([u64::MAX, 0, 0, 0]);
 
 // L1 BLOCK INFO
@@ -70,6 +76,10 @@ pub struct L1BlockInfo {
     pub l1_blob_scalar: Option<U256>,
     /// The current call data gas (l1_blob_scalar * l1_base_fee), None if before Curie.
     pub calldata_gas: Option<U256>,
+    /// The current compression penalty threshold, None if before Feynman.
+    pub penalty_threshold: Option<U256>,
+    /// The current compression penalty factor, None if before Feynman.
+    pub penalty_factor: Option<U256>,
 }
 
 impl L1BlockInfo {
@@ -97,6 +107,23 @@ impl L1BlockInfo {
         let l1_blob_scalar = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, L1_BLOB_SCALAR_SLOT)?;
         let calldata_gas = l1_commit_scalar.saturating_mul(l1_base_fee);
 
+        // If Feynman is not enabled, return the L1 block info without Feynman fields.
+        if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
+            return Ok(L1BlockInfo {
+                l1_base_fee,
+                l1_fee_overhead,
+                l1_base_fee_scalar,
+                l1_blob_base_fee: Some(l1_blob_base_fee),
+                l1_commit_scalar: Some(l1_commit_scalar),
+                l1_blob_scalar: Some(l1_blob_scalar),
+                calldata_gas: Some(calldata_gas),
+                ..Default::default()
+            });
+        }
+
+        let penalty_threshold = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, PENALTY_THRESHOLD_SLOT)?;
+        let penalty_factor = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, PENALTY_FACTOR_SLOT)?;
+
         Ok(L1BlockInfo {
             l1_base_fee,
             l1_fee_overhead,
@@ -105,6 +132,8 @@ impl L1BlockInfo {
             l1_commit_scalar: Some(l1_commit_scalar),
             l1_blob_scalar: Some(l1_blob_scalar),
             calldata_gas: Some(calldata_gas),
+            penalty_threshold: Some(penalty_threshold),
+            penalty_factor: Some(penalty_factor),
         })
     }
 
@@ -147,63 +176,68 @@ impl L1BlockInfo {
         spec_id: ScrollSpecId,
         compression_ratio: U256,
     ) -> U256 {
-        // rollup_fee(tx) = compression_factor(tx) * size(tx) * (component_exec + component_blob)
-        //
-        // - compression_factor(tx): compression_factor = 1 / compression_ratio, where
-        // compression_ratio is the estimated compressibility of the signed tx data. The tx is
-        // eventually a part of a L2 batch that should likely result in a better compression ratio,
-        // however a conservative estimate is the size of zstd-encoding of the signed tx.
+        // rollup_fee(tx) = size(tx) * (component_exec + component_blob) * penalty(tx)
         //
         // - size(tx): denotes the size of the signed tx.
         //
-        // - component_exec: The component that accounts towards commiting this tx as part of a L2
+        // - component_exec: The component that accounts towards committing this tx as part of a L2
         // batch as well as gas costs for the eventual on-chain proof verification.
-        // => (compression_scalar + commit_scalar + verification_scalar) * l1_base_fee
-        // => (exec_scalar) * l1_base_fee
+        // => compression_scalar * (commit_scalar + verification_scalar) * l1_base_fee
+        // => exec_scalar * l1_base_fee
         //
         // - component_blob: The component that accounts the costs associated with data
         // availability, i.e. the costs of posting this tx's data in the EIP-4844 blob.
-        // => (compression_scalar + blob_scalar) * l1_blob_base_fee
-        // => (new_blob_scalar) * l1_blob_base_fee
+        // => (compression_scalar * blob_scalar) * l1_blob_base_fee
+        // => new_blob_scalar * l1_blob_base_fee
         //
         // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
         // re-used/updated for the new values post-FEYNMAN.
+        //
+        // - penalty(tx): a compression penalty decided based on the transactions compression ratio.
+        // - compression_ratio(tx) = size(tx) / size(zstd(tx))
+        // - if compression_ratio(tx) >= penalty_threshold, then penalty(tx) = 1, i.e. no penalty.
+        // - otherwise, penalty(tx) = penaltyFactor.
+
         assert!(
             compression_ratio >= TX_L1_FEE_PRECISION_U256,
             "transaction compression ratio must be greater or equal to {TX_L1_FEE_PRECISION_U256:?} - compression ratio: {compression_ratio:?}"
         );
 
-        let component_exec = {
-            let exec_scalar = self
-                .l1_commit_scalar
-                .unwrap_or_else(|| panic!("missing exec scalar in spec_id={:?}", spec_id));
-            exec_scalar.saturating_mul(self.l1_base_fee)
+        let exec_scalar = self
+            .l1_commit_scalar
+            .unwrap_or_else(|| panic!("missing exec scalar in spec_id={:?}", spec_id));
+
+        let blob_scalar = self
+            .l1_blob_scalar
+            .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={:?}", spec_id));
+
+        let blob_base_fee = self
+            .l1_blob_base_fee
+            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={:?}", spec_id));
+
+        let penalty_threshold = self
+            .penalty_threshold
+            .unwrap_or_else(|| panic!("missing penalty threshold in spec_id={:?}", spec_id));
+
+        let penalty_factor = self
+            .penalty_factor
+            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={:?}", spec_id));
+
+        let tx_size = U256::from(input.len());
+        let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
+        let component_blob = blob_scalar.saturating_mul(blob_base_fee);
+
+        let penalty = if compression_ratio >= penalty_threshold {
+            TX_L1_FEE_PRECISION_U256
+        } else {
+            penalty_factor
         };
-        let component_blob = {
-            let blob_scalar = self
-                .l1_blob_scalar
-                .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={:?}", spec_id));
-            let blob_base_fee = self
-                .l1_blob_base_fee
-                .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={:?}", spec_id));
-            blob_scalar.saturating_mul(blob_base_fee)
-        };
 
-        // Assume compression_factor = 1 until we have specification for estimating compression
-        // ratio based on previous finalised batches.
-        //
-        // We use the `TX_L1_FEE_PRECISION` to allow fractions. We then divide the overall product
-        // by the precision value as well.
-        // let compression_factor = |_input: &[u8]| -> U256 { TX_L1_FEE_PRECISION };
-
-        // size(tx) is just the length of the RLP-encoded signed tx data.
-        let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
-
-        tx_size(input)
+        tx_size
             .saturating_mul(component_exec.saturating_add(component_blob))
-            .saturating_mul(TX_L1_FEE_PRECISION_U256)
-            .wrapping_div(compression_ratio)
-            .wrapping_div(TX_L1_FEE_PRECISION_U256)
+            .saturating_mul(penalty)
+            .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for scalars
+            .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for penalty
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
