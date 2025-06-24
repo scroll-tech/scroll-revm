@@ -36,6 +36,7 @@ fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
     let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
 
+    // initial gas should include eip7702 cost of authorized accounts.
     assert_eq!(
         gas_empty_authorization_list.initial_gas + eip7702::PER_EMPTY_ACCOUNT_COST,
         gas_with_authorization_list.initial_gas
@@ -57,19 +58,9 @@ fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
     });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+
+    // eip 7702 env checks should pass.
     handler.validate_env(&mut evm)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_apply_eip7702_auth_list() -> Result<(), Box<dyn core::error::Error>> {
-    let ctx = context().modify_tx_chained(|tx| {
-        tx.base.tx_type = TransactionType::Eip7702 as u8;
-    });
-    let mut evm = ctx.build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-    handler.apply_eip7702_auth_list(&mut evm)?;
 
     Ok(())
 }

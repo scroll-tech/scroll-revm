@@ -18,7 +18,9 @@ fn test_validate_lacking_funds_l1_message() -> Result<(), Box<dyn core::error::E
     let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-    handler.validate(&mut evm)?;
+
+    // pre execution includes fees deduction, which should be skipped for l1 messages.
+    handler.pre_execution(&mut evm)?;
 
     Ok(())
 }
@@ -30,6 +32,7 @@ fn test_load_account_l1_message() -> Result<(), Box<dyn core::error::Error>> {
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
     handler.load_accounts(&mut evm)?;
 
+    // l1 block info should not be loaded for l1 messages.
     let l1_block_info = evm.ctx().chain.clone();
     assert_eq!(l1_block_info, L1BlockInfo::default());
 
@@ -45,6 +48,7 @@ fn test_deduct_caller_l1_message() -> Result<(), Box<dyn core::error::Error>> {
     handler.load_accounts(&mut evm)?;
     handler.validate_against_state_and_deduct_caller(&mut evm)?;
 
+    // nonce should be increase and caller should have same balance as the start (0).
     let caller_account = evm.ctx().journal().load_account(CALLER)?;
     assert_eq!(caller_account.info.balance, U256::ZERO);
     assert_eq!(caller_account.info.nonce, 1);
@@ -67,6 +71,7 @@ fn test_last_frame_result_l1_message() -> Result<(), Box<dyn core::error::Error>
     ));
     handler.last_frame_result(&mut evm, &mut result)?;
 
+    // refund should be 0 for l1 messages.
     gas.set_refund(0);
     assert_eq!(result.gas(), &gas);
 
@@ -108,6 +113,7 @@ fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn core::error::Error
     handler.load_accounts(&mut evm)?;
     handler.reward_beneficiary(&mut evm, &mut result)?;
 
+    // beneficiary should not see his balance increased for l1 message execution.
     let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
     assert_eq!(beneficiary.info.balance, U256::ZERO);
 
