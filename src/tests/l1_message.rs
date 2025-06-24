@@ -4,7 +4,6 @@ use crate::{
     l1block::L1BlockInfo,
     test_utils::{context, BENEFICIARY, CALLER},
     transaction::L1_MESSAGE_TYPE,
-    ScrollSpecId,
 };
 
 use revm::{
@@ -16,9 +15,7 @@ use revm_primitives::U256;
 
 #[test]
 fn test_validate_lacking_funds_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-    let ctx = context()
-        .modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE)
-        .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+    let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
     handler.validate(&mut evm)?;

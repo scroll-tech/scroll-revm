@@ -1,4 +1,4 @@
-use crate::{builder::ScrollBuilder, handler::ScrollHandler, test_utils::context, ScrollSpecId};
+use crate::{builder::ScrollBuilder, handler::ScrollHandler, test_utils::context};
 
 use revm::{
     context::{
@@ -46,21 +46,15 @@ fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>
 
 #[test]
 fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
-    let ctx = context()
-        .modify_tx_chained(|tx| {
-            tx.base.tx_type = TransactionType::Eip7702 as u8;
-            tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
-                Authorization {
-                    chain_id: Default::default(),
-                    address: Default::default(),
-                    nonce: 0,
-                },
-                0,
-                U256::ZERO,
-                U256::ZERO,
-            ))]
-        })
-        .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+    let ctx = context().modify_tx_chained(|tx| {
+        tx.base.tx_type = TransactionType::Eip7702 as u8;
+        tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
+            Authorization { chain_id: Default::default(), address: Default::default(), nonce: 0 },
+            0,
+            U256::ZERO,
+            U256::ZERO,
+        ))]
+    });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
     handler.validate_env(&mut evm)?;
@@ -70,11 +64,9 @@ fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
 
 #[test]
 fn test_apply_eip7702_auth_list() -> Result<(), Box<dyn core::error::Error>> {
-    let ctx = context()
-        .modify_tx_chained(|tx| {
-            tx.base.tx_type = TransactionType::Eip7702 as u8;
-        })
-        .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
+    let ctx = context().modify_tx_chained(|tx| {
+        tx.base.tx_type = TransactionType::Eip7702 as u8;
+    });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
     handler.apply_eip7702_auth_list(&mut evm)?;
