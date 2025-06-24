@@ -59,6 +59,7 @@ impl DefaultScrollContext for ScrollContext<EmptyDB> {
         let spec = ScrollSpecId::default();
         let mut cfg = CfgEnv::new_with_spec(spec);
         cfg.enable_eip7702 = spec >= ScrollSpecId::EUCLID;
+        cfg.enable_eip7623 = spec >= ScrollSpecId::FEYNMAN;
 
         Context::mainnet()
             .with_tx(ScrollTransaction::default())
@@ -67,15 +68,28 @@ impl DefaultScrollContext for ScrollContext<EmptyDB> {
     }
 }
 
-/// Activates EIP-7702 if necessary for the context.
-pub trait MaybeWithEip7702 {
-    /// Activates EIP-7702 if necessary.
+/// Activates specific EIP's for Euclid.
+pub trait EuclidEipActivations {
+    /// Activates EIP-7702 if the spec is at least at Euclid.
     fn maybe_with_eip_7702(self) -> Self;
 }
 
-impl<DB: Database> MaybeWithEip7702 for ScrollContext<DB> {
+/// Activates specific EIP's for Feynman.
+pub trait FeynmanEipActivations: EuclidEipActivations {
+    /// Activates EIP-7623 if the spec is at least at Feynman.
+    fn maybe_with_eip_7623(self) -> Self;
+}
+
+impl<DB: Database> EuclidEipActivations for ScrollContext<DB> {
     fn maybe_with_eip_7702(mut self) -> Self {
         self.cfg.enable_eip7702 = self.cfg.spec >= ScrollSpecId::EUCLID;
+        self
+    }
+}
+
+impl<DB: Database> FeynmanEipActivations for ScrollContext<DB> {
+    fn maybe_with_eip_7623(mut self) -> Self {
+        self.cfg.enable_eip7623 = self.cfg.spec >= ScrollSpecId::FEYNMAN;
         self
     }
 }
