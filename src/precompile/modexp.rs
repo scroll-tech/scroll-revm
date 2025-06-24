@@ -1,6 +1,6 @@
 use revm::{
     precompile::{
-        modexp::{self, berlin_gas_calc, osaka_gas_calc, run_inner},
+        modexp::{self, berlin_gas_calc, run_inner},
         utilities::right_pad_with_offset,
         PrecompileError, PrecompileResult, PrecompileWithAddress,
     },
@@ -45,10 +45,5 @@ pub fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
     run_inner::<_, OSAKA>(input, gas_limit, 200, berlin_gas_calc)
 }
 
-/// The feynman MODEXP precompile implementation with address.
-pub const FEYNMAN: PrecompileWithAddress = PrecompileWithAddress(ADDRESS, feynman_run);
-
-pub fn feynman_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
-    const OSAKA: bool = true;
-    run_inner::<_, OSAKA>(input, gas_limit, 500, osaka_gas_calc)
-}
+/// The MODEXP precompile in the FEYNMAN hardfork.
+pub const FEYNMAN: PrecompileWithAddress = modexp::OSAKA;
