@@ -34,19 +34,6 @@ impl<EVM, ERROR, FRAME> Default for ScrollHandler<EVM, ERROR, FRAME> {
     }
 }
 
-pub trait IsLackOfFundForMaxFeeError {
-    fn is_lack_of_funds_for_max_fee_error(&self) -> bool;
-}
-
-impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
-    fn is_lack_of_funds_for_max_fee_error(&self) -> bool {
-        if let EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee { .. }) = self {
-            return true;
-        }
-        false
-    }
-}
-
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
@@ -62,7 +49,7 @@ impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
 where
     EVM: EvmTr<Context: ScrollContextTr>,
-    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError + From<InvalidTransaction>,
+    ERROR: EvmTrError<EVM> + From<InvalidTransaction>,
     FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
 {
     type Evm = EVM;
@@ -249,7 +236,7 @@ where
         Context: ScrollContextTr,
         Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
     >,
-    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError,
+    ERROR: EvmTrError<EVM>,
     FRAME: InspectorFrame<
         Evm = EVM,
         Error = ERROR,
