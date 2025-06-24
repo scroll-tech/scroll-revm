@@ -4,6 +4,7 @@ use crate::{
     test_utils::{context_with_funds, CALLER},
     ScrollSpecId,
 };
+use std::boxed::Box;
 
 use revm::{
     context::{result::EVMError, ContextTr, JournalTr},

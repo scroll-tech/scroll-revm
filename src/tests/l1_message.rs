@@ -5,6 +5,7 @@ use crate::{
     test_utils::{context, BENEFICIARY, CALLER},
     transaction::L1_MESSAGE_TYPE,
 };
+use std::boxed::Box;
 
 use revm::{
     context::{result::EVMError, ContextTr, JournalTr},

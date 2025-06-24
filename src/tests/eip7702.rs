@@ -1,4 +1,5 @@
 use crate::{builder::ScrollBuilder, handler::ScrollHandler, test_utils::context};
+use std::{boxed::Box, vec};
 
 use revm::{
     context::{
