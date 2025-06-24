@@ -18,7 +18,8 @@ const NON_ZERO_BYTE_COST: u64 = 16;
 const TX_L1_COMMIT_EXTRA_COST: U256 = U256::from_limbs([64u64, 0, 0, 0]);
 
 /// The precision used for L1 fee calculations.
-const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
+pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000u64;
+pub const TX_L1_FEE_PRECISION_U256: U256 = U256::from_limbs([TX_L1_FEE_PRECISION, 0, 0, 0]);
 
 /// The L1 gas price oracle address.
 pub const L1_GAS_PRICE_ORACLE_ADDRESS: Address =
@@ -130,21 +131,21 @@ impl L1BlockInfo {
         tx_l1_gas
             .saturating_mul(self.l1_base_fee)
             .saturating_mul(self.l1_base_fee_scalar)
-            .wrapping_div(TX_L1_FEE_PRECISION)
+            .wrapping_div(TX_L1_FEE_PRECISION_U256)
     }
 
     fn calculate_tx_l1_cost_curie(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
         // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee"
         let blob_gas = self.data_gas(input, spec_id);
 
-        self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION)
+        self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION_U256)
     }
 
     fn calculate_tx_l1_cost_feynman(
         &self,
         input: &[u8],
         spec_id: ScrollSpecId,
-        compression_factor: U256,
+        compression_ratio: U256,
     ) -> U256 {
         // rollup_fee(tx) = compression_factor(tx) * size(tx) * (component_exec + component_blob)
         //
@@ -168,8 +169,8 @@ impl L1BlockInfo {
         // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
         // re-used/updated for the new values post-FEYNMAN.
         assert!(
-            compression_factor < U256::from(1),
-            "transaction compression factor must be less than 1"
+            compression_ratio >= TX_L1_FEE_PRECISION_U256,
+            "transaction compression ratio must be greater or equal to {TX_L1_FEE_PRECISION_U256:?} - compression ratio: {compression_ratio:?}"
         );
 
         let component_exec = {
@@ -198,11 +199,11 @@ impl L1BlockInfo {
         // size(tx) is just the length of the RLP-encoded signed tx data.
         let tx_size = |input: &[u8]| -> U256 { U256::from(input.len()) };
 
-        compression_factor
-            .saturating_mul(tx_size(input))
+        tx_size(input)
             .saturating_mul(component_exec.saturating_add(component_blob))
-            .wrapping_div(TX_L1_FEE_PRECISION)
-            .wrapping_div(TX_L1_FEE_PRECISION)
+            .saturating_mul(TX_L1_FEE_PRECISION_U256)
+            .wrapping_div(compression_ratio)
+            .wrapping_div(TX_L1_FEE_PRECISION_U256)
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
