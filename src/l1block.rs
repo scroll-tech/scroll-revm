@@ -193,10 +193,13 @@ impl L1BlockInfo {
         // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
         // re-used/updated for the new values post-FEYNMAN.
         //
-        // - penalty(tx): a compression penalty decided based on the transactions compression ratio.
-        // - compression_ratio(tx) = size(tx) / size(zstd(tx))
-        // - if compression_ratio(tx) >= penalty_threshold, then penalty(tx) = 1, i.e. no penalty.
-        // - otherwise, penalty(tx) = penaltyFactor.
+        // - penalty(tx): a compression penalty based on the transaction's compression ratio.
+        // => penalty(tx) = compression_ratio(tx) >= penalty_threshold ? 1 : penalty_factor
+        //    compression_ratio(tx) = size(tx) / size(zstd(tx))
+        //
+        // Note that commit_scalar, blob_scalar, compression_ratio, penalty_threshold,
+        // penalty_factor, penalty are all scaled by TX_L1_FEE_PRECISION_U256 (1e9) to
+        // avoid losing precision.
 
         assert!(
             compression_ratio >= TX_L1_FEE_PRECISION_U256,
@@ -224,8 +227,10 @@ impl L1BlockInfo {
             .unwrap_or_else(|| panic!("missing penalty factor in spec_id={:?}", spec_id));
 
         let tx_size = U256::from(input.len());
+
         let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
         let component_blob = blob_scalar.saturating_mul(blob_base_fee);
+        let fee_per_byte = component_exec.saturating_add(component_blob);
 
         let penalty = if compression_ratio >= penalty_threshold {
             TX_L1_FEE_PRECISION_U256
@@ -234,7 +239,7 @@ impl L1BlockInfo {
         };
 
         tx_size
-            .saturating_mul(component_exec.saturating_add(component_blob))
+            .saturating_mul(fee_per_byte)
             .saturating_mul(penalty)
             .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for scalars
             .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for penalty
