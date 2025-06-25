@@ -1,25 +1,18 @@
 use super::precompile_not_implemented;
 
-use revm::{precompile::PrecompileWithAddress, primitives::Address};
+use revm::{
+    precompile::{hash, PrecompileResult, PrecompileWithAddress},
+    primitives::Address,
+};
 
 pub mod sha256 {
     use super::*;
-    use revm::precompile::PrecompileResult;
 
-    // CONSTANTS
-    // ------------------------------------------------------------------------------------------------
+    /// SHA-256 precompile address
+    pub const ADDRESS: Address = hash::SHA256.0;
 
-    /// The SHA256 precompile address.
-    pub const ADDRESS: Address = revm::precompile::hash::SHA256.0;
-
-    // SHA256 SHANGHAI PRECOMPILE
-    // --------------------------------------------------------------------------------------------
-
-    /// The shanghai SHA256 precompile implementation with address.
+    /// The SHA256 precompile is not implemented in the Shanghai hardfork.
     pub const SHANGHAI: PrecompileWithAddress = precompile_not_implemented(ADDRESS);
-
-    // SHA256 BERNOULLI PRECOMPILE
-    // --------------------------------------------------------------------------------------------
 
     /// The bernoulli SHA256 precompile implementation with address.
     pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(ADDRESS, run);
@@ -30,13 +23,13 @@ pub mod sha256 {
                 use revm::precompile::{calc_linear_cost_u32, PrecompileError, PrecompileOutput};
                 let cost = calc_linear_cost_u32(input.len(), 60, 12);
                 if cost > gas_limit {
-                        Err(PrecompileError::OutOfGas)
+                    Err(PrecompileError::OutOfGas)
                 } else {
                     let output = openvm_sha2::sha256(input);
                     Ok(PrecompileOutput::new(cost, output.to_vec().into()))
                 }
             } else {
-                revm::precompile::hash::sha256_run(input, gas_limit)
+                hash::sha256_run(input, gas_limit)
             }
         }
     }
@@ -45,16 +38,10 @@ pub mod sha256 {
 pub mod ripemd160 {
     use super::*;
 
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
-
     /// The RIPEMD160 precompile address.
-    const ADDRESS: Address = revm::precompile::hash::RIPEMD160.0;
+    pub const ADDRESS: Address = hash::RIPEMD160.0;
 
-    // RIPEMD160 SHANGHAI PRECOMPILE
-    // --------------------------------------------------------------------------------------------
-
-    /// The shanghai RIPEMD160 precompile implementation with address.
+    /// The shanghai RIPEMD160 precompile is not implemented in the Shanghai hardfork.
     ///
     /// This precompile is not implemented and will return `PrecompileError::Other("Precompile not
     /// implemented".into())`.

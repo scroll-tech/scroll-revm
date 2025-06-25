@@ -1,5 +1,5 @@
 use revm::precompile::{
-    bn128::{ADD_INPUT_LEN, MUL_INPUT_LEN, PAIR_ELEMENT_LEN},
+    bn128::{self, ADD_INPUT_LEN, MUL_INPUT_LEN, PAIR_ELEMENT_LEN},
     utilities::{bool_to_bytes32, right_pad},
     PrecompileError, PrecompileOutput, PrecompileResult, PrecompileWithAddress,
 };
@@ -32,7 +32,7 @@ cfg_if::cfg_if! {
 pub mod add {
     use super::*;
 
-    pub use revm::precompile::bn128::add::{ADDRESS, ISTANBUL_ADD_GAS_COST};
+    pub use bn128::add::{ADDRESS, ISTANBUL_ADD_GAS_COST};
 
     /// Bn128 add precompile with ISTANBUL gas rules
     pub const ISTANBUL: PrecompileWithAddress =
@@ -45,7 +45,7 @@ pub mod add {
 pub mod mul {
     use super::*;
 
-    pub use revm::precompile::bn128::mul::{ADDRESS, ISTANBUL_MUL_GAS_COST};
+    pub use bn128::mul::{ADDRESS, ISTANBUL_MUL_GAS_COST};
 
     /// Bn128 mul precompile with ISTANBUL gas rules
     pub const ISTANBUL: PrecompileWithAddress =
@@ -57,42 +57,30 @@ pub mod mul {
 pub mod pair {
     use super::*;
 
-    pub use revm::precompile::bn128::pair::{ADDRESS, ISTANBUL_PAIR_BASE, ISTANBUL_PAIR_PER_POINT};
-
-    // CONSTANTS
-    // --------------------------------------------------------------------------------------------
+    pub use bn128::pair::{ADDRESS, ISTANBUL_PAIR_BASE, ISTANBUL_PAIR_PER_POINT};
 
     /// The number of pairing inputs per pairing operation. If the inputs provided to the precompile
     /// call are < 4, we append (G1::infinity, G2::generator) until we have the required no. of
     /// inputs.
-    const N_PAIRING_PER_OP: usize = 4;
+    const BERNOULLI_LEN_LIMIT: usize = 4;
 
-    /// The number of bytes taken to represent a pair (G1, G2).
-    const N_BYTES_PER_PAIR: usize = 192;
-
-    // BN128 PAIRING PRECOMPILE
-    // --------------------------------------------------------------------------------------------
-
-    /// The BN128 PAIRING precompile with address.
+    /// The Bn128 pair precompile with BERNOULLI input rules.
     pub const BERNOULLI: PrecompileWithAddress = PrecompileWithAddress(ADDRESS, bernoulli_run);
 
-    /// The bernoulli BN128 PAIRING precompile implementation.
+    /// The bernoulli Bn128 pair precompile implementation.
     ///
     /// # Errors
     /// - `PrecompileError::Other("BN128PairingInputOverflow: input overflow".into())` if the input
     ///   length is greater than 768 bytes.
     fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
-        if input.len() > N_PAIRING_PER_OP * N_BYTES_PER_PAIR {
+        if input.len() > BERNOULLI_LEN_LIMIT * PAIR_ELEMENT_LEN {
             return Err(PrecompileError::Other("BN128PairingInputOverflow: input overflow".into()));
         }
         run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
     }
 
-    /// The BN128 PAIRING precompile with address.
-    pub const FEYNMAN: PrecompileWithAddress =
-        PrecompileWithAddress(ADDRESS, |input, gas_limit| {
-            run_pair(input, ISTANBUL_PAIR_PER_POINT, ISTANBUL_PAIR_BASE, gas_limit)
-        });
+    /// The Bn128 pair precompile in FEYNMAN hardfork.
+    pub const FEYNMAN: PrecompileWithAddress = bn128::pair::ISTANBUL;
 }
 
 // Copied from https://github.com/bluealloy/revm/blob/v75/crates/precompile/src/bn128.rs Under MIT License

@@ -1,17 +1,14 @@
 use super::precompile_not_implemented;
 
-use revm::{precompile::PrecompileWithAddress, primitives::Address};
-
-// CONSTANTS
-// ================================================================================================
+use revm::{
+    precompile::{blake2, PrecompileWithAddress},
+    primitives::Address,
+};
 
 /// The BLAKE2 precompile address.
-const ADDRESS: Address = revm::precompile::blake2::FUN.0;
+pub const ADDRESS: Address = blake2::FUN.0;
 
-// BLAKE2 PRECOMPILE
-// ================================================================================================
-
-/// The shanghai BLAKE2 precompile implementation with address.
+/// The BLAKE2 precompile is not implemented in the SHANGHAI hardfork.
 ///
 /// This precompile is not implemented and will return `PrecompileError::Other("Precompile not
 /// implemented".into())`.
