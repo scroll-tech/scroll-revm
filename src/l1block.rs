@@ -211,17 +211,17 @@ impl L1BlockInfo {
         &self,
         input: &[u8],
         spec_id: ScrollSpecId,
-        compression_factor: Option<U256>,
+        compression_ratio: Option<U256>,
     ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
         } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
         } else {
-            let compression_factor = compression_factor.unwrap_or_else(|| {
-                panic!("compression factor should be set in spec_id={:?}", spec_id)
+            let compression_ratio = compression_ratio.unwrap_or_else(|| {
+                panic!("compression ratio should be set in spec_id={:?}", spec_id)
             });
-            self.calculate_tx_l1_cost_feynman(input, spec_id, compression_factor)
+            self.calculate_tx_l1_cost_feynman(input, spec_id, compression_ratio)
         };
         l1_cost.min(U64_MAX)
     }

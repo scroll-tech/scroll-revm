@@ -116,7 +116,7 @@ where
 
             // Deduct l1 fee from caller.
             let tx_l1_cost =
-                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_factor());
+                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_ratio());
             let caller_account = ctx.journal().load_account(caller)?;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
@@ -230,7 +230,7 @@ where
         let l1_cost = l1_block_info.calculate_tx_l1_cost(
             rlp_bytes,
             ctx.cfg().spec(),
-            ctx.tx().compression_factor(),
+            ctx.tx().compression_ratio(),
         );
 
         // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark
