@@ -1,0 +1,56 @@
+use crate::{
+    builder::{DefaultScrollContext, ScrollContext},
+    l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
+};
+use revm::{
+    database::{DbAccount, InMemoryDB},
+    state::AccountInfo,
+    Context,
+};
+use revm_primitives::{address, bytes, Address, U256};
+
+pub const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
+pub const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
+pub const TO: Address = address!("0x0000000000000000000000000000000000000001");
+pub const BENEFICIARY: Address = address!("0x0000000000000000000000000000000000000002");
+pub const MIN_TRANSACTION_COST: U256 = U256::from_limbs([21_000u64, 0, 0, 0]);
+pub const L1_DATA_COST: U256 = U256::from_limbs([40_000u64, 0, 0, 0]);
+
+/// Returns a test [`ScrollContext`] which contains a basic transaction, a default block beneficiary
+/// and a state with L1 gas oracle slots set.
+pub fn context() -> ScrollContext<InMemoryDB> {
+    Context::scroll()
+        .modify_tx_chained(|tx| {
+            tx.base.caller = CALLER;
+            tx.base.kind = Some(TO).into();
+            tx.base.gas_price = 1;
+            tx.base.gas_limit = 21000;
+            tx.base.gas_priority_fee = None;
+            tx.rlp_bytes = Some(bytes!("01010101"));
+        })
+        .modify_block_chained(|block| block.beneficiary = BENEFICIARY)
+        .with_db(InMemoryDB::default())
+        .modify_db_chained(|db| {
+            let _ = db.replace_account_storage(
+                L1_GAS_PRICE_ORACLE_ADDRESS,
+                (0..7)
+                    .map(|n| (U256::from(n), U256::from(10_000)))
+                    .chain(core::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
+                    .collect(),
+            );
+        })
+}
+
+/// Returns a test [`ScrollContext`] which contains a basic transaction, a default block beneficiary
+/// and a state with L1 gas oracle slots set and the provided funds for the caller.
+pub fn context_with_funds(funds: U256) -> ScrollContext<InMemoryDB> {
+    context().modify_db_chained(|db| {
+        db.cache.accounts.insert(
+            CALLER,
+            DbAccount {
+                info: AccountInfo { balance: funds, ..Default::default() },
+                ..Default::default()
+            },
+        );
+    })
+}

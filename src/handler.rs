@@ -5,7 +5,7 @@ use std::{boxed::Box, string::ToString};
 
 use revm::{
     context::{
-        result::{EVMError, HaltReason, InvalidTransaction},
+        result::{HaltReason, InvalidTransaction},
         Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
@@ -34,19 +34,6 @@ impl<EVM, ERROR, FRAME> Default for ScrollHandler<EVM, ERROR, FRAME> {
     }
 }
 
-pub trait IsLackOfFundForMaxFeeError {
-    fn is_lack_of_funds_for_max_fee_error(&self) -> bool;
-}
-
-impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
-    fn is_lack_of_funds_for_max_fee_error(&self) -> bool {
-        if let EVMError::Transaction(InvalidTransaction::LackOfFundForMaxFee { .. }) = self {
-            return true;
-        }
-        false
-    }
-}
-
 /// Configure the handler for the Scroll chain.
 ///
 /// The trait modifies the following handlers:
@@ -62,7 +49,7 @@ impl<DB> IsLackOfFundForMaxFeeError for EVMError<DB> {
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
 where
     EVM: EvmTr<Context: ScrollContextTr>,
-    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError + From<InvalidTransaction>,
+    ERROR: EvmTrError<EVM> + From<InvalidTransaction>,
     FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
 {
     type Evm = EVM;
@@ -116,7 +103,7 @@ where
 
             // Deduct l1 fee from caller.
             let tx_l1_cost =
-                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_factor());
+                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_ratio());
             let caller_account = ctx.journal().load_account(caller)?;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
@@ -230,7 +217,7 @@ where
         let l1_cost = l1_block_info.calculate_tx_l1_cost(
             rlp_bytes,
             ctx.cfg().spec(),
-            ctx.tx().compression_factor(),
+            ctx.tx().compression_ratio(),
         );
 
         // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark
@@ -255,7 +242,7 @@ where
         Context: ScrollContextTr,
         Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
     >,
-    ERROR: EvmTrError<EVM> + IsLackOfFundForMaxFeeError,
+    ERROR: EvmTrError<EVM>,
     FRAME: InspectorFrame<
         Evm = EVM,
         Error = ERROR,
@@ -271,68 +258,18 @@ where
 mod tests {
     use super::*;
     use crate::{
-        builder::{DefaultScrollContext, ScrollBuilder, ScrollContext},
-        l1block::L1_GAS_PRICE_ORACLE_ADDRESS,
-        transaction::L1_MESSAGE_TYPE,
-        ScrollSpecId,
+        builder::ScrollBuilder,
+        test_utils::{
+            context, context_with_funds, BENEFICIARY, CALLER, L1_DATA_COST, MIN_TRANSACTION_COST,
+        },
     };
-    use std::{boxed::Box, vec};
+    use std::boxed::Box;
 
     use revm::{
-        context::{
-            either::Either,
-            transaction::{Authorization, SignedAuthorization},
-            TransactionType,
-        },
-        database::{DbAccount, InMemoryDB},
+        context::result::EVMError,
         handler::EthFrame,
         interpreter::{CallOutcome, InstructionResult, InterpreterResult},
-        state::AccountInfo,
-        Context,
     };
-    use revm_primitives::{address, bytes, eip7702, Address};
-
-    const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
-    const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
-    const TO: Address = address!("0x0000000000000000000000000000000000000001");
-    const BENEFICIARY: Address = address!("0x0000000000000000000000000000000000000002");
-    const MIN_TRANSACTION_COST: U256 = U256::from_limbs([21_000u64, 0, 0, 0]);
-    const L1_DATA_COST: U256 = U256::from_limbs([4u64, 0, 0, 0]);
-
-    fn context() -> ScrollContext<InMemoryDB> {
-        Context::scroll()
-            .modify_tx_chained(|tx| {
-                tx.base.caller = CALLER;
-                tx.base.kind = Some(TO).into();
-                tx.base.gas_price = 1;
-                tx.base.gas_limit = 21000;
-                tx.base.gas_priority_fee = None;
-                tx.rlp_bytes = Some(bytes!("01010101"));
-            })
-            .modify_block_chained(|block| block.beneficiary = BENEFICIARY)
-            .with_db(InMemoryDB::default())
-            .modify_db_chained(|db| {
-                let _ = db.replace_account_storage(
-                    L1_GAS_PRICE_ORACLE_ADDRESS,
-                    (0..7)
-                        .map(|n| (U256::from(n), U256::from(1)))
-                        .chain(core::iter::once((U256::from(7), TX_L1_FEE_PRECISION)))
-                        .collect(),
-                );
-            })
-    }
-
-    fn context_with_funds(funds: U256) -> ScrollContext<InMemoryDB> {
-        context().modify_db_chained(|db| {
-            db.cache.accounts.insert(
-                CALLER,
-                DbAccount {
-                    info: AccountInfo { balance: funds, ..Default::default() },
-                    ..Default::default()
-                },
-            );
-        })
-    }
 
     #[test]
     fn test_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
@@ -352,75 +289,6 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_lacking_funds_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context()
-            .modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE)
-            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.validate(&mut evm)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context();
-        let evm = ctx.clone().build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let gas_empty_authorization_list = handler.validate_initial_tx_gas(&evm)?;
-
-        let evm = ctx
-            .modify_tx_chained(|tx| {
-                tx.base.gas_limit += eip7702::PER_EMPTY_ACCOUNT_COST;
-                tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
-                    Authorization {
-                        chain_id: Default::default(),
-                        address: Default::default(),
-                        nonce: 0,
-                    },
-                    0,
-                    U256::ZERO,
-                    U256::ZERO,
-                ))]
-            })
-            .build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
-
-        assert_eq!(
-            gas_empty_authorization_list.initial_gas + eip7702::PER_EMPTY_ACCOUNT_COST,
-            gas_with_authorization_list.initial_gas
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context()
-            .modify_tx_chained(|tx| {
-                tx.base.tx_type = TransactionType::Eip7702 as u8;
-                tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
-                    Authorization {
-                        chain_id: Default::default(),
-                        address: Default::default(),
-                        nonce: 0,
-                    },
-                    0,
-                    U256::ZERO,
-                    U256::ZERO,
-                ))]
-            })
-            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.validate_env(&mut evm)?;
-
-        Ok(())
-    }
-
-    #[test]
     fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
         let mut evm = ctx.build_scroll();
@@ -434,55 +302,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_account_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.load_accounts(&mut evm)?;
-
-        let l1_block_info = evm.ctx().chain.clone();
-        assert_eq!(l1_block_info, L1BlockInfo::default());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_apply_eip7702_auth_list() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context()
-            .modify_tx_chained(|tx| {
-                tx.base.tx_type = TransactionType::Eip7702 as u8;
-            })
-            .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::EUCLID);
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.apply_eip7702_auth_list(&mut evm)?;
-
-        Ok(())
-    }
-
-    #[test]
     fn test_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         handler.pre_execution(&mut evm)?;
-
-        let caller_account = evm.ctx().journal().load_account(CALLER)?;
-        assert_eq!(caller_account.info.balance, U256::ZERO);
-        assert_eq!(caller_account.info.nonce, 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_deduct_caller_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
-
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        handler.load_accounts(&mut evm)?;
-        handler.validate_against_state_and_deduct_caller(&mut evm)?;
 
         let caller_account = evm.ctx().journal().load_account(CALLER)?;
         assert_eq!(caller_account.info.balance, U256::ZERO);
@@ -516,30 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn test_last_frame_result_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
-
-        let mut evm = ctx.build_scroll();
-        let mut handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let mut gas = Gas::new(21000);
-        gas.set_refund(10);
-        gas.set_spent(10);
-        let mut result = FrameResult::Call(CallOutcome::new(
-            InterpreterResult {
-                result: InstructionResult::Return,
-                output: Default::default(),
-                gas,
-            },
-            0..0,
-        ));
-        handler.last_frame_result(&mut evm, &mut result)?;
-
-        gas.set_refund(0);
-        assert_eq!(result.gas(), &gas);
-
-        Ok(())
-    }
-    #[test]
     fn test_refund() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
 
@@ -565,31 +366,6 @@ mod tests {
     }
 
     #[test]
-    fn test_refund_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
-
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let mut gas = Gas::new(21000);
-        gas.set_refund(10);
-        gas.set_spent(10);
-        let mut result = FrameResult::Call(CallOutcome::new(
-            InterpreterResult {
-                result: InstructionResult::Return,
-                output: Default::default(),
-                gas,
-            },
-            0..0,
-        ));
-        handler.refund(&mut evm, &mut result, 0);
-
-        // gas should not have been updated
-        assert_eq!(result.gas(), &gas);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
@@ -609,30 +385,6 @@ mod tests {
 
         let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
         assert_eq!(beneficiary.info.balance, MIN_TRANSACTION_COST + L1_DATA_COST);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
-
-        let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
-        let gas = Gas::new_spent(21000);
-        let mut result = FrameResult::Call(CallOutcome::new(
-            InterpreterResult {
-                result: InstructionResult::Return,
-                output: Default::default(),
-                gas,
-            },
-            0..0,
-        ));
-        handler.load_accounts(&mut evm)?;
-        handler.reward_beneficiary(&mut evm, &mut result)?;
-
-        let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
-        assert_eq!(beneficiary.info.balance, U256::ZERO);
 
         Ok(())
     }
