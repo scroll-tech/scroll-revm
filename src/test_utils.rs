@@ -8,6 +8,7 @@ use revm::{
     Context,
 };
 use revm_primitives::{address, bytes, Address, Bytes, U256};
+use std::vec::Vec;
 
 pub const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
 pub const CALLER: Address = address!("0x000000000000000000000000000000000000dead");

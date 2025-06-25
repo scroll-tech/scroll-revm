@@ -5,7 +5,7 @@ use crate::{
     test_utils::{context, ScrollContextTestUtils, CALLER},
     ScrollSpecId,
 };
-use std::boxed::Box;
+use std::{boxed::Box, vec};
 
 use revm::{
     context::{result::EVMError, ContextTr, JournalTr},
