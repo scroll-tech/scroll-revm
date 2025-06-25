@@ -260,7 +260,8 @@ mod tests {
     use crate::{
         builder::ScrollBuilder,
         test_utils::{
-            context, context_with_funds, BENEFICIARY, CALLER, L1_DATA_COST, MIN_TRANSACTION_COST,
+            context, ScrollContextTestUtils, BENEFICIARY, CALLER, L1_DATA_COST,
+            MIN_TRANSACTION_COST,
         },
     };
     use std::boxed::Box;
@@ -290,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
+        let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
         handler.pre_execution(&mut evm)?;
@@ -303,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
+        let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -367,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
+        let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
@@ -391,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_transaction_pre_execution() -> Result<(), Box<dyn core::error::Error>> {
-        let ctx = context_with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
+        let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
         let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();

@@ -26,30 +26,30 @@ pub const L1_GAS_PRICE_ORACLE_ADDRESS: Address =
     address!("5300000000000000000000000000000000000002");
 
 /// The L1 base fee storage slot.
-const L1_BASE_FEE_SLOT: U256 = U256::from_limbs([1u64, 0, 0, 0]);
+pub const L1_BASE_FEE_SLOT: U256 = U256::from_limbs([1u64, 0, 0, 0]);
 
 /// The L1 fee overhead storage slot.
-const L1_OVERHEAD_SLOT: U256 = U256::from_limbs([2u64, 0, 0, 0]);
+pub const L1_OVERHEAD_SLOT: U256 = U256::from_limbs([2u64, 0, 0, 0]);
 
 /// The L1 fee scalar storage slot.
-const L1_SCALAR_SLOT: U256 = U256::from_limbs([3u64, 0, 0, 0]);
+pub const L1_SCALAR_SLOT: U256 = U256::from_limbs([3u64, 0, 0, 0]);
 
 /// The L1 blob base fee storage slot.
-const L1_BLOB_BASE_FEE_SLOT: U256 = U256::from_limbs([5u64, 0, 0, 0]);
+pub const L1_BLOB_BASE_FEE_SLOT: U256 = U256::from_limbs([5u64, 0, 0, 0]);
 
 /// The L1 commit scalar storage slot.
 ///
 /// Post-FEYNMAN this represents the exec_scalar.
-const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
+pub const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
 
 /// The L1 blob scalar storage slot.
-const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
+pub const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
 
 /// The compression penalty threshold storage slot.
-const PENALTY_THRESHOLD_SLOT: U256 = U256::from_limbs([9u64, 0, 0, 0]);
+pub const PENALTY_THRESHOLD_SLOT: U256 = U256::from_limbs([9u64, 0, 0, 0]);
 
 /// The compression penalty factor storage slot.
-const PENALTY_FACTOR_SLOT: U256 = U256::from_limbs([10u64, 0, 0, 0]);
+pub const PENALTY_FACTOR_SLOT: U256 = U256::from_limbs([10u64, 0, 0, 0]);
 
 const U64_MAX: U256 = U256::from_limbs([u64::MAX, 0, 0, 0]);
 
