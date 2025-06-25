@@ -22,5 +22,11 @@ pub mod precompile;
 pub use spec::*;
 mod spec;
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 pub use transaction::ScrollTransaction;
 mod transaction;
