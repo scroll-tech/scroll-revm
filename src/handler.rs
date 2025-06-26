@@ -217,13 +217,17 @@ where
         let beneficiary = block.beneficiary();
 
         // calculate the L1 cost of the transaction.
-        let l1_block_info = ctx.chain().clone();
-        let Some(rlp_bytes) = &ctx.tx().rlp_bytes() else {
-            return Err(ERROR::from_string(
-                "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
-            ));
+        let l1_cost = if !ctx.tx().is_system_tx() {
+            let l1_block_info = ctx.chain().clone();
+            let Some(rlp_bytes) = &ctx.tx().rlp_bytes() else {
+                return Err(ERROR::from_string(
+                    "[SCROLL] Failed to load transaction rlp_bytes.".to_string(),
+                ));
+            };
+            l1_block_info.calculate_tx_l1_cost(rlp_bytes, ctx.cfg().spec())
+        } else {
+            U256::from(0)
         };
-        let l1_cost = l1_block_info.calculate_tx_l1_cost(rlp_bytes, ctx.cfg().spec());
 
         // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark
         // the account as touched.
