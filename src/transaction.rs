@@ -1,13 +1,19 @@
 use revm::context::{Transaction, TxEnv};
-use revm_primitives::{Address, Bytes, TxKind, B256, U256};
+use revm_primitives::{address, Address, Bytes, TxKind, B256, U256};
 
 /// The type for a l1 message transaction.
 pub const L1_MESSAGE_TYPE: u8 = 0x7E;
+
+/// The caller address of EIP-2935 system transactions.
+pub const SYSTEM_ADDRESS: Address = address!("0xfffffffffffffffffffffffffffffffffffffffe");
 
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait ScrollTxTr: Transaction {
     /// Whether the transaction is an L1 message.
     fn is_l1_msg(&self) -> bool;
+
+    /// Whether the transaction is a system transaction (e.g. EIP-2935).
+    fn is_system_tx(&self) -> bool;
 
     /// The RLP encoded transaction bytes which are used to calculate the cost associated with
     /// posting the transaction on L1.
@@ -109,6 +115,10 @@ impl<T: Transaction> Transaction for ScrollTransaction<T> {
 impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
     fn is_l1_msg(&self) -> bool {
         self.tx_type() == L1_MESSAGE_TYPE
+    }
+
+    fn is_system_tx(&self) -> bool {
+        self.caller() == SYSTEM_ADDRESS
     }
 
     fn rlp_bytes(&self) -> Option<&Bytes> {
