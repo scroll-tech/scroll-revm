@@ -7,10 +7,15 @@ use crate::{
 };
 use std::boxed::Box;
 
+use crate::test_utils::MIN_TRANSACTION_COST;
 use revm::{
-    context::{result::EVMError, ContextTr, JournalTr},
+    context::{
+        result::{EVMError, ExecutionResult, HaltReason, ResultAndState},
+        ContextTr, JournalTr,
+    },
     handler::{EthFrame, EvmTr, FrameResult, Handler},
     interpreter::{CallOutcome, Gas, InstructionResult, InterpreterResult},
+    ExecuteEvm,
 };
 use revm_primitives::U256;
 
@@ -117,6 +122,29 @@ fn test_reward_beneficiary_l1_message() -> Result<(), Box<dyn core::error::Error
     // beneficiary should not see his balance increased for l1 message execution.
     let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
     assert_eq!(beneficiary.info.balance, U256::ZERO);
+
+    Ok(())
+}
+
+#[test]
+fn test_should_revert_with_out_of_funds_l1_message() -> Result<(), Box<dyn core::error::Error>> {
+    let ctx = context().modify_tx_chained(|tx| {
+        tx.base.tx_type = L1_MESSAGE_TYPE;
+        tx.base.value = U256::ONE;
+    });
+    let tx = ctx.tx.clone();
+    let mut evm = ctx.build_scroll();
+
+    let ResultAndState { result, .. } = evm.transact(tx)?;
+
+    // L1 message should pass pre-execution but revert with `OutOfFunds`.
+    assert_eq!(
+        result,
+        ExecutionResult::Halt {
+            gas_used: MIN_TRANSACTION_COST.to(),
+            reason: HaltReason::OutOfFunds
+        }
+    );
 
     Ok(())
 }

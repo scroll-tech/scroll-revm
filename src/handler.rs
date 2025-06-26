@@ -125,7 +125,10 @@ where
                 is_nonce_check_disabled,
             )?;
 
-            // only check balance if l1 message and Spec is EUCLID.
+            // Note: we skip the balance check at pre-execution level if the transaction is a
+            // L1 message and Euclid is enabled. This means the L1 message will reach execution
+            // stage in revm and revert with `OutOfFunds` in the first frame, but still be included
+            // in the block.
             let skip_balance_check = tx.is_l1_msg() && spec.is_enabled_in(ScrollSpecId::EUCLID);
             if !skip_balance_check {
                 let max_balance_spending = tx.max_balance_spending()?;
