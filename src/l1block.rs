@@ -182,24 +182,27 @@ impl L1BlockInfo {
         //
         // - component_exec: The component that accounts towards committing this tx as part of a L2
         // batch as well as gas costs for the eventual on-chain proof verification.
-        // => compression_scalar * (commit_scalar + verification_scalar) * l1_base_fee
-        // => exec_scalar * l1_base_fee
+        //
+        // => component_exec = exec_scalar * l1_base_fee
+        //    where exec_scalar = compression_scalar * (commit_scalar + verification_scalar)
         //
         // - component_blob: The component that accounts the costs associated with data
         // availability, i.e. the costs of posting this tx's data in the EIP-4844 blob.
-        // => (compression_scalar * blob_scalar) * l1_blob_base_fee
-        // => new_blob_scalar * l1_blob_base_fee
+        //
+        // => component_blob = compressed_blob_scalar * l1_blob_base_fee
+        //    where compressed_blob_scalar = compression_scalar * blob_scalar
         //
         // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
-        // re-used/updated for the new values post-FEYNMAN.
+        // re-used for the new exec_scalar and compressed_blob_scalar values post-FEYNMAN.
         //
-        // - penalty(tx): a compression penalty based on the transaction's compression ratio.
+        // - penalty(tx): A compression penalty based on the transaction's compression ratio.
+        //
         // => penalty(tx) = compression_ratio(tx) >= penalty_threshold ? 1 : penalty_factor
-        //    compression_ratio(tx) = size(tx) / size(zstd(tx))
+        //    where compression_ratio(tx) = size(tx) / size(zstd(tx))
         //
-        // Note that commit_scalar, blob_scalar, compression_ratio, penalty_threshold,
-        // penalty_factor, penalty are all scaled by TX_L1_FEE_PRECISION_U256 (1e9) to
-        // avoid losing precision.
+        // Note that commit_scalar (exec_scalar), blob_scalar (compressed_blob_scalar),
+        // compression_ratio, penalty_threshold, penalty_factor, penalty are all scaled
+        // by TX_L1_FEE_PRECISION_U256 (1e9) to avoid losing precision.
 
         assert!(
             compression_ratio >= TX_L1_FEE_PRECISION_U256,
@@ -210,11 +213,11 @@ impl L1BlockInfo {
             .l1_commit_scalar
             .unwrap_or_else(|| panic!("missing exec scalar in spec_id={:?}", spec_id));
 
-        let blob_scalar = self
+        let compressed_blob_scalar = self
             .l1_blob_scalar
             .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={:?}", spec_id));
 
-        let blob_base_fee = self
+        let l1_blob_base_fee = self
             .l1_blob_base_fee
             .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={:?}", spec_id));
 
@@ -229,7 +232,7 @@ impl L1BlockInfo {
         let tx_size = U256::from(input.len());
 
         let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
-        let component_blob = blob_scalar.saturating_mul(blob_base_fee);
+        let component_blob = compressed_blob_scalar.saturating_mul(l1_blob_base_fee);
         let fee_per_byte = component_exec.saturating_add(component_blob);
 
         let penalty = if compression_ratio >= penalty_threshold {
