@@ -5,7 +5,7 @@ use revm_primitives::{address, Address, Bytes, TxKind, B256, U256};
 pub const L1_MESSAGE_TYPE: u8 = 0x7E;
 
 /// The caller address of EIP-2935 system transactions.
-pub const SYSTEM_ADDRESS: Address = address!("fffffffffffffffffffffffffffffffffffffffe");
+pub const SYSTEM_ADDRESS: Address = address!("0xfffffffffffffffffffffffffffffffffffffffe");
 
 #[auto_impl::auto_impl(&, Arc, Box)]
 pub trait ScrollTxTr: Transaction {
