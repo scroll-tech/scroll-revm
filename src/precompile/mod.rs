@@ -11,10 +11,10 @@ use revm::{
 };
 use revm_primitives::hardfork::SpecId;
 
-mod blake2;
-mod bn128;
-mod hash;
-mod modexp;
+pub mod blake2;
+pub mod bn128;
+pub mod hash;
+pub mod modexp;
 
 /// Provides Scroll precompiles, modifying any relevant behaviour.
 #[derive(Debug, Clone)]
@@ -62,8 +62,8 @@ pub(crate) fn pre_bernoulli() -> &'static Precompiles {
             hash::ripemd160::SHANGHAI,
             precompile::identity::FUN,
             modexp::BERNOULLI,
-            precompile::bn128::add::ISTANBUL,
-            precompile::bn128::mul::ISTANBUL,
+            bn128::add::ISTANBUL,
+            bn128::mul::ISTANBUL,
             bn128::pair::BERNOULLI,
             blake2::SHANGHAI,
         ]);
