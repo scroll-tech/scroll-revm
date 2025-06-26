@@ -60,7 +60,7 @@ where
     #[inline]
     fn pre_execution(&self, evm: &mut Self::Evm) -> Result<u64, Self::Error> {
         // only load the L1BlockInfo for txs that are not l1 messages.
-        if !evm.ctx().tx().is_l1_msg() {
+        if !evm.ctx().tx().is_l1_msg() && !evm.ctx().tx().is_system_tx() {
             let spec = evm.ctx().cfg().spec();
             let l1_block_info = L1BlockInfo::try_fetch(&mut evm.ctx().db(), spec)?;
             *evm.ctx().chain() = l1_block_info;
@@ -84,16 +84,21 @@ where
         let ctx = evm.ctx();
         let caller = ctx.tx().caller();
         let is_l1_msg = ctx.tx().is_l1_msg();
+        let is_system_tx = ctx.tx().is_system_tx();
         let kind = ctx.tx().kind();
         let spec = ctx.cfg().spec();
         let is_eip3607_disabled = ctx.cfg().is_eip3607_disabled();
         let is_nonce_check_disabled = ctx.cfg().is_nonce_check_disabled();
 
+        // execute normal checks and transaction processing logic for non-l1-msgs
         if !is_l1_msg {
             // We deduct caller max balance after minting and before deducing the
             // l1 cost, max values is already checked in pre_validate but l1 cost wasn't.
             pre_execution::validate_against_state_and_deduct_caller::<_, ERROR>(ctx)?;
+        }
 
+        // process rollup fee
+        if !is_l1_msg && !is_system_tx {
             let l1_block_info = ctx.chain().clone();
             let Some(rlp_bytes) = ctx.tx().rlp_bytes() else {
                 return Err(ERROR::from_string(
@@ -114,7 +119,10 @@ where
             }
             caller_account.data.info.balance =
                 caller_account.data.info.balance.saturating_sub(tx_l1_cost);
-        } else {
+        }
+
+        // execute l1 msg checks
+        if is_l1_msg {
             // Load caller's account.
             let (tx, journal) = ctx.tx_journal();
             let mut caller_account = journal.load_account(caller)?;
@@ -127,7 +135,10 @@ where
                 is_nonce_check_disabled,
             )?;
 
-            // only check balance if l1 message and Spec is EUCLID.
+            // Note: we skip the balance check at pre-execution level if the transaction is a
+            // L1 message and Euclid is enabled. This means the L1 message will reach execution
+            // stage in revm and revert with `OutOfFunds` in the first frame, but still be included
+            // in the block.
             let skip_balance_check = tx.is_l1_msg() && spec.is_enabled_in(ScrollSpecId::EUCLID);
             if !skip_balance_check {
                 let max_balance_spending = tx.max_balance_spending()?;
