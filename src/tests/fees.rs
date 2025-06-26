@@ -63,7 +63,7 @@ fn test_no_rollup_fee_for_system_tx() -> Result<(), Box<dyn core::error::Error>>
 
     let caller_account = evm.ctx().journal().load_account(CALLER)?;
 
-    // cost is 21k + 40k (curie l1 cost).
+    // gas price is 0, no data fee => balance is unchanged.
     assert_eq!(caller_account.data.info.balance, U256::from(70_000));
 
     Ok(())
