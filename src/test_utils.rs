@@ -7,7 +7,8 @@ use revm::{
     state::AccountInfo,
     Context,
 };
-use revm_primitives::{address, bytes, Address, U256};
+use revm_primitives::{address, bytes, Address, Bytes, U256};
+use std::vec::Vec;
 
 pub const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
 pub const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
@@ -41,16 +42,34 @@ pub fn context() -> ScrollContext<InMemoryDB> {
         })
 }
 
-/// Returns a test [`ScrollContext`] which contains a basic transaction, a default block beneficiary
-/// and a state with L1 gas oracle slots set and the provided funds for the caller.
-pub fn context_with_funds(funds: U256) -> ScrollContext<InMemoryDB> {
-    context().modify_db_chained(|db| {
-        db.cache.accounts.insert(
-            CALLER,
-            DbAccount {
-                info: AccountInfo { balance: funds, ..Default::default() },
-                ..Default::default()
-            },
-        );
-    })
+pub trait ScrollContextTestUtils {
+    fn with_funds(self, funds: U256) -> Self;
+    fn with_gas_oracle_config(self, entries: Vec<(U256, U256)>) -> Self;
+    fn with_tx_payload(self, data: Bytes) -> Self;
+}
+
+impl ScrollContextTestUtils for ScrollContext<InMemoryDB> {
+    fn with_funds(self, funds: U256) -> Self {
+        self.modify_db_chained(|db| {
+            db.cache.accounts.insert(
+                CALLER,
+                DbAccount {
+                    info: AccountInfo { balance: funds, ..Default::default() },
+                    ..Default::default()
+                },
+            );
+        })
+    }
+
+    fn with_gas_oracle_config(self, entries: Vec<(U256, U256)>) -> Self {
+        self.modify_db_chained(|db| {
+            for entry in entries {
+                let _ = db.insert_account_storage(L1_GAS_PRICE_ORACLE_ADDRESS, entry.0, entry.1);
+            }
+        })
+    }
+
+    fn with_tx_payload(self, data: Bytes) -> Self {
+        self.modify_tx_chained(|tx| tx.rlp_bytes = Some(data))
+    }
 }

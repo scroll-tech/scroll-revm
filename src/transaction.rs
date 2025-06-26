@@ -18,6 +18,11 @@ pub trait ScrollTxTr: Transaction {
     /// The RLP encoded transaction bytes which are used to calculate the cost associated with
     /// posting the transaction on L1.
     fn rlp_bytes(&self) -> Option<&Bytes>;
+
+    /// The compression ratio of the transaction which is used to calculate the cost associated
+    /// with posting the transaction on L1.
+    /// Note: compression_ratio(tx) = size(tx) * 1e9 / size(zstd(tx))
+    fn compression_ratio(&self) -> Option<U256>;
 }
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
@@ -27,17 +32,18 @@ pub trait ScrollTxTr: Transaction {
 pub struct ScrollTransaction<T: Transaction> {
     pub base: T,
     pub rlp_bytes: Option<Bytes>,
+    pub compression_ratio: Option<U256>,
 }
 
 impl<T: Transaction> ScrollTransaction<T> {
-    pub fn new(base: T, rlp_bytes: Option<Bytes>) -> Self {
-        Self { base, rlp_bytes }
+    pub fn new(base: T, rlp_bytes: Option<Bytes>, compression_ratio: Option<U256>) -> Self {
+        Self { base, rlp_bytes, compression_ratio }
     }
 }
 
 impl Default for ScrollTransaction<TxEnv> {
     fn default() -> Self {
-        Self { base: TxEnv::default(), rlp_bytes: None }
+        Self { base: TxEnv::default(), rlp_bytes: None, compression_ratio: None }
     }
 }
 
@@ -123,5 +129,9 @@ impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
 
     fn rlp_bytes(&self) -> Option<&Bytes> {
         self.rlp_bytes.as_ref()
+    }
+
+    fn compression_ratio(&self) -> Option<U256> {
+        self.compression_ratio
     }
 }

@@ -18,29 +18,38 @@ const NON_ZERO_BYTE_COST: u64 = 16;
 const TX_L1_COMMIT_EXTRA_COST: U256 = U256::from_limbs([64u64, 0, 0, 0]);
 
 /// The precision used for L1 fee calculations.
-const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
+pub const TX_L1_FEE_PRECISION: u64 = 1_000_000_000u64;
+pub const TX_L1_FEE_PRECISION_U256: U256 = U256::from_limbs([TX_L1_FEE_PRECISION, 0, 0, 0]);
 
 /// The L1 gas price oracle address.
 pub const L1_GAS_PRICE_ORACLE_ADDRESS: Address =
     address!("5300000000000000000000000000000000000002");
 
 /// The L1 base fee storage slot.
-const L1_BASE_FEE_SLOT: U256 = U256::from_limbs([1u64, 0, 0, 0]);
+pub const L1_BASE_FEE_SLOT: U256 = U256::from_limbs([1u64, 0, 0, 0]);
 
 /// The L1 fee overhead storage slot.
-const L1_OVERHEAD_SLOT: U256 = U256::from_limbs([2u64, 0, 0, 0]);
+pub const L1_OVERHEAD_SLOT: U256 = U256::from_limbs([2u64, 0, 0, 0]);
 
 /// The L1 fee scalar storage slot.
-const L1_SCALAR_SLOT: U256 = U256::from_limbs([3u64, 0, 0, 0]);
+pub const L1_SCALAR_SLOT: U256 = U256::from_limbs([3u64, 0, 0, 0]);
 
 /// The L1 blob base fee storage slot.
-const L1_BLOB_BASE_FEE_SLOT: U256 = U256::from_limbs([5u64, 0, 0, 0]);
+pub const L1_BLOB_BASE_FEE_SLOT: U256 = U256::from_limbs([5u64, 0, 0, 0]);
 
 /// The L1 commit scalar storage slot.
-const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
+///
+/// Post-FEYNMAN this represents the exec_scalar.
+pub const L1_COMMIT_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
 
 /// The L1 blob scalar storage slot.
-const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
+pub const L1_BLOB_SCALAR_SLOT: U256 = U256::from_limbs([7u64, 0, 0, 0]);
+
+/// The compression penalty threshold storage slot.
+pub const PENALTY_THRESHOLD_SLOT: U256 = U256::from_limbs([9u64, 0, 0, 0]);
+
+/// The compression penalty factor storage slot.
+pub const PENALTY_FACTOR_SLOT: U256 = U256::from_limbs([10u64, 0, 0, 0]);
 
 const U64_MAX: U256 = U256::from_limbs([u64::MAX, 0, 0, 0]);
 
@@ -67,6 +76,10 @@ pub struct L1BlockInfo {
     pub l1_blob_scalar: Option<U256>,
     /// The current call data gas (l1_blob_scalar * l1_base_fee), None if before Curie.
     pub calldata_gas: Option<U256>,
+    /// The current compression penalty threshold, None if before Feynman.
+    pub penalty_threshold: Option<U256>,
+    /// The current compression penalty factor, None if before Feynman.
+    pub penalty_factor: Option<U256>,
 }
 
 impl L1BlockInfo {
@@ -94,6 +107,23 @@ impl L1BlockInfo {
         let l1_blob_scalar = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, L1_BLOB_SCALAR_SLOT)?;
         let calldata_gas = l1_commit_scalar.saturating_mul(l1_base_fee);
 
+        // If Feynman is not enabled, return the L1 block info without Feynman fields.
+        if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
+            return Ok(L1BlockInfo {
+                l1_base_fee,
+                l1_fee_overhead,
+                l1_base_fee_scalar,
+                l1_blob_base_fee: Some(l1_blob_base_fee),
+                l1_commit_scalar: Some(l1_commit_scalar),
+                l1_blob_scalar: Some(l1_blob_scalar),
+                calldata_gas: Some(calldata_gas),
+                ..Default::default()
+            });
+        }
+
+        let penalty_threshold = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, PENALTY_THRESHOLD_SLOT)?;
+        let penalty_factor = db.storage(L1_GAS_PRICE_ORACLE_ADDRESS, PENALTY_FACTOR_SLOT)?;
+
         Ok(L1BlockInfo {
             l1_base_fee,
             l1_fee_overhead,
@@ -102,6 +132,8 @@ impl L1BlockInfo {
             l1_commit_scalar: Some(l1_commit_scalar),
             l1_blob_scalar: Some(l1_blob_scalar),
             calldata_gas: Some(calldata_gas),
+            penalty_threshold: Some(penalty_threshold),
+            penalty_factor: Some(penalty_factor),
         })
     }
 
@@ -128,22 +160,110 @@ impl L1BlockInfo {
         tx_l1_gas
             .saturating_mul(self.l1_base_fee)
             .saturating_mul(self.l1_base_fee_scalar)
-            .wrapping_div(TX_L1_FEE_PRECISION)
+            .wrapping_div(TX_L1_FEE_PRECISION_U256)
     }
 
     fn calculate_tx_l1_cost_curie(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
         // "commitScalar * l1BaseFee + blobScalar * _data.length * l1BlobBaseFee"
         let blob_gas = self.data_gas(input, spec_id);
 
-        self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION)
+        self.calldata_gas.unwrap().saturating_add(blob_gas).wrapping_div(TX_L1_FEE_PRECISION_U256)
+    }
+
+    fn calculate_tx_l1_cost_feynman(
+        &self,
+        input: &[u8],
+        spec_id: ScrollSpecId,
+        compression_ratio: U256,
+    ) -> U256 {
+        // rollup_fee(tx) = size(tx) * (component_exec + component_blob) * penalty(tx)
+        //
+        // - size(tx): denotes the size of the signed tx.
+        //
+        // - component_exec: The component that accounts towards committing this tx as part of a L2
+        // batch as well as gas costs for the eventual on-chain proof verification.
+        //
+        // => component_exec = exec_scalar * l1_base_fee
+        //    where exec_scalar = compression_scalar * (commit_scalar + verification_scalar)
+        //
+        // - component_blob: The component that accounts the costs associated with data
+        // availability, i.e. the costs of posting this tx's data in the EIP-4844 blob.
+        //
+        // => component_blob = compressed_blob_scalar * l1_blob_base_fee
+        //    where compressed_blob_scalar = compression_scalar * blob_scalar
+        //
+        // Note that the same slots for L1_COMMIT_SCALAR_SLOT and L1_BLOB_SCALAR_SLOT are
+        // re-used for the new exec_scalar and compressed_blob_scalar values post-FEYNMAN.
+        //
+        // - penalty(tx): A compression penalty based on the transaction's compression ratio.
+        //
+        // => penalty(tx) = compression_ratio(tx) >= penalty_threshold ? 1 : penalty_factor
+        //    where compression_ratio(tx) = size(tx) / size(zstd(tx))
+        //
+        // Note that commit_scalar (exec_scalar), blob_scalar (compressed_blob_scalar),
+        // compression_ratio, penalty_threshold, penalty_factor, penalty are all scaled
+        // by TX_L1_FEE_PRECISION_U256 (1e9) to avoid losing precision.
+
+        assert!(
+            compression_ratio >= TX_L1_FEE_PRECISION_U256,
+            "transaction compression ratio must be greater or equal to {TX_L1_FEE_PRECISION_U256:?} - compression ratio: {compression_ratio:?}"
+        );
+
+        let exec_scalar = self
+            .l1_commit_scalar
+            .unwrap_or_else(|| panic!("missing exec scalar in spec_id={:?}", spec_id));
+
+        let compressed_blob_scalar = self
+            .l1_blob_scalar
+            .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={:?}", spec_id));
+
+        let l1_blob_base_fee = self
+            .l1_blob_base_fee
+            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={:?}", spec_id));
+
+        let penalty_threshold = self
+            .penalty_threshold
+            .unwrap_or_else(|| panic!("missing penalty threshold in spec_id={:?}", spec_id));
+
+        let penalty_factor = self
+            .penalty_factor
+            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={:?}", spec_id));
+
+        let tx_size = U256::from(input.len());
+
+        let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
+        let component_blob = compressed_blob_scalar.saturating_mul(l1_blob_base_fee);
+        let fee_per_byte = component_exec.saturating_add(component_blob);
+
+        let penalty = if compression_ratio >= penalty_threshold {
+            TX_L1_FEE_PRECISION_U256
+        } else {
+            penalty_factor
+        };
+
+        tx_size
+            .saturating_mul(fee_per_byte)
+            .saturating_mul(penalty)
+            .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for scalars
+            .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for penalty
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
-    pub fn calculate_tx_l1_cost(&self, input: &[u8], spec_id: ScrollSpecId) -> U256 {
+    pub fn calculate_tx_l1_cost(
+        &self,
+        input: &[u8],
+        spec_id: ScrollSpecId,
+        compression_ratio: Option<U256>,
+    ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
-        } else {
+        } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
+        } else {
+            let compression_ratio = compression_ratio.unwrap_or_else(|| {
+                panic!("compression ratio should be set in spec_id={:?}", spec_id)
+            });
+            self.calculate_tx_l1_cost_feynman(input, spec_id, compression_ratio)
         };
         l1_cost.min(U64_MAX)
     }
