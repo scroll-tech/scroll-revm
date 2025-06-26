@@ -21,6 +21,7 @@ pub trait ScrollTxTr: Transaction {
 
     /// The compression ratio of the transaction which is used to calculate the cost associated
     /// with posting the transaction on L1.
+    /// Note: compression_ratio(tx) = size(tx) * 1e9 / size(zstd(tx))
     fn compression_ratio(&self) -> Option<U256>;
 }
 
