@@ -24,7 +24,7 @@ impl<CTX: ScrollContextTr, INSP>
         Self(Evm {
             ctx,
             inspector,
-            instruction: ScrollInstructions::new_mainnet(spec),
+            instruction: ScrollInstructions::new_mainnet(),
             precompiles: ScrollPrecompileProvider::new_with_spec(spec),
         })
     }
