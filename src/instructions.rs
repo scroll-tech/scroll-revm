@@ -49,8 +49,8 @@ where
     WIRE: InterpreterTypes,
     HOST: ScrollContextTr,
 {
-    pub fn new_mainnet(spec: ScrollSpecId) -> Self {
-        Self::new(make_scroll_instruction_table::<WIRE, HOST>(spec))
+    pub fn new_mainnet() -> Self {
+        Self::new(make_scroll_instruction_table::<WIRE, HOST>())
     }
 
     pub fn new(base_table: InstructionTable<WIRE, HOST>) -> Self {
@@ -68,7 +68,6 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
-    spec: ScrollSpecId,
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
 
@@ -80,11 +79,6 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
     table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
 
-    // override blockhash opcode in feynman blocks
-    if spec.is_enabled_in(ScrollSpecId::FEYNMAN) {
-        table[opcode::BLOCKHASH as usize] = blockhash_feynman::<WIRE, HOST>;
-    }
-
     table
 }
 
@@ -93,10 +87,12 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
 
 /// Computes the blockhash for the requested block number.
 ///
-/// The blockhash is computed as the keccak256 hash of the chain id and the block number.
 /// If the requested block number is the current block number, a future block number or a block
 /// number older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash<WIRE: InterpreterTypes, H: Host>(interpreter: &mut Interpreter<WIRE>, host: &mut H) {
+fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(
+    interpreter: &mut Interpreter<WIRE>,
+    host: &mut H,
+) {
     gas!(interpreter, gas::BLOCKHASH);
     popn_top!([], requested_block_number, interpreter);
 
@@ -110,10 +106,30 @@ fn blockhash<WIRE: InterpreterTypes, H: Host>(interpreter: &mut Interpreter<WIRE
         0 => U256::ZERO,
         // blockhash requested for block older than BLOCK_HASH_HISTORY - return 0
         x if x > BLOCK_HASH_HISTORY => U256::ZERO,
-        // blockhash requested for block in the history - return the hash
-        _ => {
+        // blockhash requested for block in the history (pre-Feynman)
+        // blockhash is computed as the keccak256 hash of the chain id and the block number
+        _ if !host.cfg().spec().is_enabled_in(ScrollSpecId::FEYNMAN) => {
             let chain_id = as_u64_saturated!(host.chain_id());
             compute_block_hash(chain_id, as_u64_saturated!(requested_block_number))
+        }
+        // blockhash requested for block in the history (post-Feynman)
+        // blockhash is loaded from the EIP-2935 history storage system contract storage.
+        _ => {
+            // sload assumes that the account is present in the journal
+            if host.load_account_delegated(HISTORY_STORAGE_ADDRESS).is_none() {
+                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
+                return;
+            };
+
+            // index in system contract ring buffer storage is block_number % HISTORY_SERVE_WINDOW
+            let index = requested_block_number_u64.wrapping_rem(HISTORY_SERVE_WINDOW);
+
+            let Some(value) = host.sload(HISTORY_STORAGE_ADDRESS, U256::from(index)) else {
+                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
+                return;
+            };
+
+            value.data
         }
     };
 }
@@ -201,52 +217,6 @@ fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(
     interpreter.memory.copy(dst, src, len);
 }
 
-// FEYNMAN OPCODE IMPLEMENTATIONS
-// ================================================================================================
-
-/// Computes the blockhash for the requested block number.
-///
-/// The blockhash is loaded from the EIP-2935 history storage system contract storage.
-/// If the requested block number is the current block number, a future block number or a block
-/// number older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash_feynman<WIRE: InterpreterTypes, H: Host>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
-    gas!(interpreter, gas::BLOCKHASH);
-    popn_top!([], requested_block_number, interpreter);
-
-    // compute the diff between the current block number and the requested block number
-    let requested_block_number_u64 = as_u64_saturated!(requested_block_number);
-    let current_block_number = host.block_number();
-    let diff = current_block_number.saturating_sub(requested_block_number_u64);
-
-    *requested_block_number = match diff {
-        // blockhash requested for current or future block - return 0
-        0 => U256::ZERO,
-        // blockhash requested for block older than BLOCK_HASH_HISTORY - return 0
-        x if x > BLOCK_HASH_HISTORY => U256::ZERO,
-        // blockhash requested for block in the history - return the hash
-        _ => {
-            // sload assumes that the account is present in the journal
-            if host.load_account_delegated(HISTORY_STORAGE_ADDRESS).is_none() {
-                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
-                return;
-            };
-
-            // index in system contract ring buffer storage is block_number % HISTORY_SERVE_WINDOW
-            let index = requested_block_number_u64.wrapping_rem(HISTORY_SERVE_WINDOW);
-
-            let Some(value) = host.sload(HISTORY_STORAGE_ADDRESS, U256::from(index)) else {
-                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
-                return;
-            };
-
-            value.data
-        }
-    };
-}
-
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -288,7 +258,7 @@ mod tests {
         context.modify_cfg(|cfg| cfg.chain_id = chain_id);
         context.modify_cfg(|cfg| cfg.spec = spec);
 
-        let instructions = make_scroll_instruction_table(spec);
+        let instructions = make_scroll_instruction_table();
 
         let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
         let mut interpreter = Interpreter::default().with_bytecode(bytecode);
@@ -322,7 +292,7 @@ mod tests {
             .expect("insert account should succeed")
         });
 
-        let instructions = make_scroll_instruction_table(spec);
+        let instructions = make_scroll_instruction_table();
 
         let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
         let mut interpreter = Interpreter::default().with_bytecode(bytecode);
