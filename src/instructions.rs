@@ -10,9 +10,12 @@ use revm::{
         popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionContext,
         InstructionResult, InstructionTable, InterpreterTypes,
     },
-    primitives::{keccak256, BLOCK_HASH_HISTORY, U256},
+    primitives::{address, keccak256, Address, BLOCK_HASH_HISTORY, U256},
 };
 use std::rc::Rc;
+
+const HISTORY_STORAGE_ADDRESS: Address = address!("0x0000F90827F1C53a10cb7A02335B175320002935");
+const HISTORY_SERVE_WINDOW: u64 = 8191;
 
 /// Holds the EVM instruction table for Scroll.
 pub struct ScrollInstructions<WIRE: InterpreterTypes, HOST> {
@@ -46,8 +49,8 @@ where
     WIRE: InterpreterTypes,
     HOST: ScrollContextTr,
 {
-    pub fn new_mainnet(spec: ScrollSpecId) -> Self {
-        Self::new(make_scroll_instruction_table::<WIRE, HOST>(spec))
+    pub fn new_mainnet() -> Self {
+        Self::new(make_scroll_instruction_table::<WIRE, HOST>())
     }
 
     pub fn new(base_table: InstructionTable<WIRE, HOST>) -> Self {
@@ -65,21 +68,16 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
-    spec: ScrollSpecId,
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
+    table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
     table[opcode::BASEFEE as usize] = basefee::<WIRE, HOST>;
     table[opcode::TSTORE as usize] = tstore::<WIRE, HOST>;
     table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
     table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
-
-    // override blockhash opcode in pre-feynman blocks
-    if !spec.is_enabled_in(ScrollSpecId::FEYNMAN) {
-        table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
-    }
 
     table
 }
@@ -89,10 +87,9 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
 
 /// Computes the blockhash for the requested block number.
 ///
-/// The blockhash is computed as the keccak256 hash of the chain id and the block number.
 /// If the requested block number is the current block number, a future block number or a block
 /// number older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash<WIRE: InterpreterTypes, H: Host>(context: InstructionContext<'_, H, WIRE>) {
+fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
 
@@ -114,10 +111,31 @@ fn blockhash<WIRE: InterpreterTypes, H: Host>(context: InstructionContext<'_, H,
         0 => U256::ZERO,
         // blockhash requested for block older than BLOCK_HASH_HISTORY - return 0
         x if x > BLOCK_HASH_HISTORY => U256::ZERO,
-        // blockhash requested for block in the history - return the hash
-        _ => {
+        // blockhash requested for block in the history (pre-Feynman)
+        // blockhash is computed as the keccak256 hash of the chain id and the block number
+        _ if !host.cfg().spec().is_enabled_in(ScrollSpecId::FEYNMAN) => {
             let chain_id = as_u64_saturated!(host.chain_id());
             compute_block_hash(chain_id, as_u64_saturated!(requested_number))
+        }
+        // blockhash requested for block in the history (post-Feynman)
+        // blockhash is loaded from the EIP-2935 history storage system contract storage.
+        _ => {
+            // sload assumes that the account is present in the journal
+            if host.load_account_delegated(HISTORY_STORAGE_ADDRESS).is_none() {
+                interpreter.halt(InstructionResult::FatalExternalError);
+                return;
+            };
+
+            // index in system contract ring buffer storage is block_number % HISTORY_SERVE_WINDOW
+            let requested_block_number_u64 = as_u64_saturated!(requested_number);
+            let index = requested_block_number_u64.wrapping_rem(HISTORY_SERVE_WINDOW);
+
+            let Some(value) = host.sload(HISTORY_STORAGE_ADDRESS, U256::from(index)) else {
+                interpreter.halt(InstructionResult::FatalExternalError);
+                return;
+            };
+
+            value.data
         }
     };
 }
@@ -223,6 +241,7 @@ mod tests {
 
     use crate::{
         builder::{DefaultScrollContext, ScrollContext},
+        instructions::HISTORY_STORAGE_ADDRESS,
         ScrollSpecId::*,
     };
 
@@ -238,7 +257,7 @@ mod tests {
         context.modify_cfg(|cfg| cfg.chain_id = chain_id);
         context.modify_cfg(|cfg| cfg.spec = spec);
 
-        let instructions = make_scroll_instruction_table(spec);
+        let instructions = make_scroll_instruction_table();
 
         let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
         let mut interpreter = Interpreter::default().with_bytecode(bytecode);
@@ -260,14 +279,26 @@ mod tests {
         context.modify_cfg(|cfg| cfg.chain_id = chain_id);
         context.modify_cfg(|cfg| cfg.spec = spec);
 
-        let instructions = make_scroll_instruction_table(spec);
+        // updating the history storage system contract is not part of revm,
+        // in this test we simply write the block hash to the contract storage.
+        let expected_block_hash = db.block_hash_ref(target_block).expect("db contains block hash");
+        context.modify_db(|db| {
+            db.insert_account_storage(
+                HISTORY_STORAGE_ADDRESS,
+                U256::from(target_block),
+                expected_block_hash.into(),
+            )
+            .expect("insert account should succeed")
+        });
+
+        let instructions = make_scroll_instruction_table();
 
         let bytecode = Bytecode::new_legacy(Bytes::from(&[BLOCKHASH, STOP]));
         let mut interpreter = Interpreter::default().with_bytecode(bytecode);
         let _ = interpreter.stack.push(U256::from(target_block));
         interpreter.run_plain(&instructions, &mut context);
 
-        let expected = db.block_hash_ref(target_block).expect("db contains block hash").into();
+        let expected = expected_block_hash.into();
         let actual = interpreter.stack.pop().expect("stack is not empty");
         assert_eq!(actual, expected);
     }

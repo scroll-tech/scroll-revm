@@ -219,15 +219,15 @@ impl L1BlockInfo {
 
         let l1_blob_base_fee = self
             .l1_blob_base_fee
-            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}",));
+            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
 
         let penalty_threshold = self
             .penalty_threshold
-            .unwrap_or_else(|| panic!("missing penalty threshold in spec_id={spec_id:?}",));
+            .unwrap_or_else(|| panic!("missing penalty threshold in spec_id={spec_id:?}"));
 
         let penalty_factor = self
             .penalty_factor
-            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={spec_id:?}",));
+            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={spec_id:?}"));
 
         let tx_size = U256::from(input.len());
 
@@ -261,7 +261,7 @@ impl L1BlockInfo {
             self.calculate_tx_l1_cost_curie(input, spec_id)
         } else {
             let compression_ratio = compression_ratio.unwrap_or_else(|| {
-                panic!("compression ratio should be set in spec_id={spec_id:?}",)
+                panic!("compression ratio should be set in spec_id={spec_id:?}")
             });
             self.calculate_tx_l1_cost_feynman(input, spec_id, compression_ratio)
         };
