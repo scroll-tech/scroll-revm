@@ -4,10 +4,11 @@ use crate::{
 };
 
 use revm::{
-    context::{BlockEnv, Cfg, CfgEnv, JournalOutput, JournalTr, TxEnv},
+    context::{BlockEnv, Cfg, CfgEnv, JournalTr, TxEnv},
     context_interface::Block,
     database::EmptyDB,
     interpreter::interpreter::EthInterpreter,
+    state::EvmState,
     Context, Database, Journal, MainContext,
 };
 
@@ -31,7 +32,7 @@ where
     TX: ScrollTxTr,
     CFG: Cfg<Spec = ScrollSpecId>,
     DB: Database,
-    JOURNAL: JournalTr<Database = DB, FinalOutput = JournalOutput>,
+    JOURNAL: JournalTr<Database = DB, State = EvmState>,
 {
     type Context = Self;
 
