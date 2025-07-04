@@ -16,7 +16,7 @@ use revm_primitives::{eip7702, U256};
 fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context();
     let evm = ctx.clone().build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
     let gas_empty_authorization_list = handler.validate_initial_tx_gas(&evm)?;
 
     let evm = ctx
@@ -34,7 +34,7 @@ fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>
             ))]
         })
         .build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
     let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
 
     // initial gas should include eip7702 cost of authorized accounts.
@@ -58,7 +58,7 @@ fn test_validate_env_eip7702() -> Result<(), Box<dyn core::error::Error>> {
         ))]
     });
     let mut evm = ctx.build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     // eip 7702 env checks should pass.
     handler.validate_env(&mut evm)?;

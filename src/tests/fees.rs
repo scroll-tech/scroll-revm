@@ -20,11 +20,12 @@ fn test_should_deduct_correct_fees_bernoulli() -> Result<(), Box<dyn core::error
         .with_funds(U256::from(30_000))
         .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::BERNOULLI);
     let mut evm = ctx.clone().build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     handler.pre_execution(&mut evm).unwrap();
 
-    let caller_account = evm.ctx().journal().load_account(CALLER)?;
+    let ctx = evm.ctx_mut();
+    let caller_account = ctx.journal_mut().load_account(CALLER)?;
 
     // cost is 21k + 1012 (shanghai l1 cost).
     assert_eq!(caller_account.data.info.balance, U256::from(7988));
@@ -38,11 +39,12 @@ fn test_should_deduct_correct_fees_curie() -> Result<(), Box<dyn core::error::Er
         .with_funds(U256::from(70_000))
         .modify_cfg_chained(|cfg| cfg.spec = ScrollSpecId::CURIE);
     let mut evm = ctx.clone().build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     handler.pre_execution(&mut evm).unwrap();
 
-    let caller_account = evm.ctx().journal().load_account(CALLER)?;
+    let ctx = evm.ctx_mut();
+    let caller_account = ctx.journal_mut().load_account(CALLER)?;
 
     // cost is 21k + 40k (curie l1 cost).
     assert_eq!(caller_account.data.info.balance, U256::from(9000));
@@ -61,11 +63,12 @@ fn test_no_rollup_fee_for_system_tx() -> Result<(), Box<dyn core::error::Error>>
         });
 
     let mut evm = ctx.clone().build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     handler.pre_execution(&mut evm).unwrap();
 
-    let caller_account = evm.ctx().journal().load_account(CALLER)?;
+    let ctx = evm.ctx_mut();
+    let caller_account = ctx.journal_mut().load_account(CALLER)?;
 
     // gas price is 0, no data fee => balance is unchanged.
     assert_eq!(caller_account.data.info.balance, U256::from(70_000));
@@ -80,7 +83,7 @@ fn test_reward_beneficiary_system_tx() -> Result<(), Box<dyn core::error::Error>
         .modify_tx_chained(|tx| tx.base.caller = SYSTEM_ADDRESS);
 
     let mut evm = ctx.build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
     let gas = Gas::new_spent(21000);
     let mut result = FrameResult::Call(CallOutcome::new(
         InterpreterResult { result: InstructionResult::Return, output: Default::default(), gas },
@@ -90,7 +93,8 @@ fn test_reward_beneficiary_system_tx() -> Result<(), Box<dyn core::error::Error>
     handler.reward_beneficiary(&mut evm, &mut result)?;
 
     // beneficiary receives gas (if any), but not rollup fee
-    let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
+    let ctx = evm.ctx_mut();
+    let beneficiary = ctx.journal_mut().load_account(BENEFICIARY)?;
     assert_eq!(beneficiary.info.balance, U256::from(21000));
 
     Ok(())
@@ -119,11 +123,12 @@ fn test_should_deduct_correct_fees_feynman() -> Result<(), Box<dyn core::error::
         .with_tx_payload(tx_payload.into());
 
     let mut evm = ctx.clone().build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     handler.pre_execution(&mut evm).unwrap();
 
-    let caller_account = evm.ctx().journal().load_account(CALLER)?;
+    let ctx = evm.ctx_mut();
+    let caller_account = ctx.journal_mut().load_account(CALLER)?;
 
     // cost is 21k + 6k (applying 2x penalty).
     let balance_diff = initial_funds.saturating_sub(caller_account.data.info.balance);

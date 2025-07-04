@@ -6,9 +6,9 @@ use revm::{
     handler::instructions::InstructionProvider,
     interpreter::{
         as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
-        interpreter_types::{InputsTr, LoopControl, MemoryTr, RuntimeFlag, StackTr},
-        popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionResult,
-        InstructionTable, Interpreter, InterpreterTypes,
+        interpreter_types::{InputsTr, MemoryTr, RuntimeFlag, StackTr},
+        popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionContext,
+        InstructionResult, InstructionTable, InterpreterTypes,
     },
     primitives::{address, keccak256, Address, BLOCK_HASH_HISTORY, U256},
 };
@@ -89,19 +89,24 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
 ///
 /// If the requested block number is the current block number, a future block number or a block
 /// number older than `BLOCK_HASH_HISTORY` we return 0.
-fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
+
     gas!(interpreter, gas::BLOCKHASH);
-    popn_top!([], requested_block_number, interpreter);
+    popn_top!([], number, interpreter);
+
+    let requested_number = *number;
+    let block_number = host.block_number();
 
     // compute the diff between the current block number and the requested block number
-    let requested_block_number_u64 = as_u64_saturated!(requested_block_number);
-    let current_block_number = host.block_number();
-    let diff = current_block_number.saturating_sub(requested_block_number_u64);
+    let Some(diff) = block_number.checked_sub(requested_number) else {
+        *number = U256::ZERO;
+        return;
+    };
 
-    *requested_block_number = match diff {
+    let diff = as_u64_saturated!(diff);
+    *number = match diff {
         // blockhash requested for current or future block - return 0
         0 => U256::ZERO,
         // blockhash requested for block older than BLOCK_HASH_HISTORY - return 0
@@ -110,22 +115,23 @@ fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(
         // blockhash is computed as the keccak256 hash of the chain id and the block number
         _ if !host.cfg().spec().is_enabled_in(ScrollSpecId::FEYNMAN) => {
             let chain_id = as_u64_saturated!(host.chain_id());
-            compute_block_hash(chain_id, as_u64_saturated!(requested_block_number))
+            compute_block_hash(chain_id, as_u64_saturated!(requested_number))
         }
         // blockhash requested for block in the history (post-Feynman)
         // blockhash is loaded from the EIP-2935 history storage system contract storage.
         _ => {
             // sload assumes that the account is present in the journal
             if host.load_account_delegated(HISTORY_STORAGE_ADDRESS).is_none() {
-                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
+                interpreter.halt(InstructionResult::FatalExternalError);
                 return;
             };
 
             // index in system contract ring buffer storage is block_number % HISTORY_SERVE_WINDOW
+            let requested_block_number_u64 = as_u64_saturated!(requested_number);
             let index = requested_block_number_u64.wrapping_rem(HISTORY_SERVE_WINDOW);
 
             let Some(value) = host.sload(HISTORY_STORAGE_ADDRESS, U256::from(index)) else {
-                interpreter.control.set_instruction_result(InstructionResult::FatalExternalError);
+                interpreter.halt(InstructionResult::FatalExternalError);
                 return;
             };
 
@@ -134,22 +140,18 @@ fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(
     };
 }
 
-fn selfdestruct<WIRE: InterpreterTypes, H: Host>(
-    interpreter: &mut Interpreter<WIRE>,
-    _host: &mut H,
-) {
-    interpreter.control.set_instruction_result(InstructionResult::NotActivated);
+fn selfdestruct<WIRE: InterpreterTypes, H: Host>(context: InstructionContext<'_, H, WIRE>) {
+    context.interpreter.halt(InstructionResult::NotActivated);
 }
 
 // CURIE OPCODE IMPLEMENTATIONS
 // ================================================================================================
 
-fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
     if !host.cfg().spec().is_enabled_in(ScrollSpecId::CURIE) {
-        interpreter.control.set_instruction_result(InstructionResult::NotActivated);
+        interpreter.halt(InstructionResult::NotActivated);
         return;
     }
 
@@ -157,12 +159,11 @@ fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(
     push!(interpreter, U256::from(host.basefee()));
 }
 
-fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
     if !host.cfg().spec().is_enabled_in(ScrollSpecId::CURIE) {
-        interpreter.control.set_instruction_result(InstructionResult::NotActivated);
+        interpreter.halt(InstructionResult::NotActivated);
         return;
     }
 
@@ -174,12 +175,11 @@ fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(
     host.tstore(interpreter.input.target_address(), index, value);
 }
 
-fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
     if !host.cfg().spec().is_enabled_in(ScrollSpecId::CURIE) {
-        interpreter.control.set_instruction_result(InstructionResult::NotActivated);
+        interpreter.halt(InstructionResult::NotActivated);
         return;
     }
 
@@ -190,12 +190,11 @@ fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(
     *index = host.tload(interpreter.input.target_address(), *index);
 }
 
-fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(
-    interpreter: &mut Interpreter<WIRE>,
-    host: &mut H,
-) {
+fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
     if !host.cfg().spec().is_enabled_in(ScrollSpecId::CURIE) {
-        interpreter.control.set_instruction_result(InstructionResult::NotActivated);
+        interpreter.halt(InstructionResult::NotActivated);
         return;
     }
 
@@ -250,7 +249,7 @@ mod tests {
 
     #[test]
     fn test_blockhash_before_feynman() {
-        let (chain_id, current_block, target_block, spec) = (123, 1024, 1000, EUCLID);
+        let (chain_id, current_block, target_block, spec) = (123, U256::from(1024), 1000, EUCLID);
 
         let db = EmptyDB::new();
         let mut context = ScrollContext::scroll().with_db(InMemoryDB::new(db));
@@ -272,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_blockhash_after_feynman() {
-        let (chain_id, current_block, target_block, spec) = (123, 1024, 1000, FEYNMAN);
+        let (chain_id, current_block, target_block, spec) = (123, U256::from(1024), 1000, FEYNMAN);
 
         let db = EmptyDB::new();
         let mut context = ScrollContext::scroll().with_db(InMemoryDB::new(db));

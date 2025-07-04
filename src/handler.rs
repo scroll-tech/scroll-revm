@@ -9,13 +9,13 @@ use revm::{
         Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
-        post_execution, pre_execution, pre_execution::validate_account_nonce_and_code, EvmTr,
-        EvmTrError, Frame, FrameResult, Handler, MainnetHandler,
+        post_execution, pre_execution, pre_execution::validate_account_nonce_and_code, EthFrame,
+        EvmTr, EvmTrError, FrameResult, FrameTr, Handler, MainnetHandler,
     },
-    interpreter::{interpreter::EthInterpreter, FrameInput, Gas},
+    interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit, Gas},
     primitives::U256,
 };
-use revm_inspector::{Inspector, InspectorEvmTr, InspectorFrame, InspectorHandler};
+use revm_inspector::{Inspector, InspectorEvmTr, InspectorHandler};
 
 /// The Scroll handler.
 pub struct ScrollHandler<EVM, ERROR, FRAME> {
@@ -48,13 +48,12 @@ impl<EVM, ERROR, FRAME> Default for ScrollHandler<EVM, ERROR, FRAME> {
 ///   gas fee and skip rewarding in case the transaction is a L1 message.
 impl<EVM, ERROR, FRAME> Handler for ScrollHandler<EVM, ERROR, FRAME>
 where
-    EVM: EvmTr<Context: ScrollContextTr>,
+    EVM: EvmTr<Context: ScrollContextTr, Frame = FRAME>,
     ERROR: EvmTrError<EVM> + From<InvalidTransaction>,
-    FRAME: Frame<Evm = EVM, Error = ERROR, FrameResult = FrameResult, FrameInit = FrameInput>,
+    FRAME: FrameTr<FrameResult = FrameResult, FrameInit = FrameInit>,
 {
     type Evm = EVM;
     type Error = ERROR;
-    type Frame = FRAME;
     type HaltReason = HaltReason;
 
     #[inline]
@@ -62,15 +61,12 @@ where
         // only load the L1BlockInfo for txs that are not l1 messages.
         if !evm.ctx().tx().is_l1_msg() && !evm.ctx().tx().is_system_tx() {
             let spec = evm.ctx().cfg().spec();
-            let l1_block_info = L1BlockInfo::try_fetch(&mut evm.ctx().db(), spec)?;
-            *evm.ctx().chain() = l1_block_info;
+            let l1_block_info = L1BlockInfo::try_fetch(evm.ctx().db_mut(), spec)?;
+            *evm.ctx().chain_mut() = l1_block_info;
         }
 
         self.validate_against_state_and_deduct_caller(evm)?;
         self.load_accounts(evm)?;
-        // Cache EIP-7873 EOF initcodes and calculate its hash. Does nothing if not Initcode
-        // Transaction.
-        self.apply_eip7873_eof_initcodes(evm)?;
         let gas = self.apply_eip7702_auth_list(evm)?;
         Ok(gas)
     }
@@ -85,7 +81,6 @@ where
         let caller = ctx.tx().caller();
         let is_l1_msg = ctx.tx().is_l1_msg();
         let is_system_tx = ctx.tx().is_system_tx();
-        let kind = ctx.tx().kind();
         let spec = ctx.cfg().spec();
         let is_eip3607_disabled = ctx.cfg().is_eip3607_disabled();
         let is_nonce_check_disabled = ctx.cfg().is_nonce_check_disabled();
@@ -109,7 +104,7 @@ where
             // Deduct l1 fee from caller.
             let tx_l1_cost =
                 l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_ratio());
-            let caller_account = ctx.journal().load_account(caller)?;
+            let caller_account = ctx.journal_mut().load_account(caller)?;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
                     fee: tx_l1_cost.into(),
@@ -124,13 +119,12 @@ where
         // execute l1 msg checks
         if is_l1_msg {
             // Load caller's account.
-            let (tx, journal) = ctx.tx_journal();
+            let (tx, journal) = ctx.tx_journal_mut();
             let mut caller_account = journal.load_account(caller)?;
 
             validate_account_nonce_and_code(
                 &mut caller_account.info,
                 tx.nonce(),
-                kind.is_call(),
                 is_eip3607_disabled,
                 is_nonce_check_disabled,
             )?;
@@ -151,6 +145,11 @@ where
                 }
             }
 
+            // Bump the nonce for calls. Nonce for CREATE will be bumped in `make_create_frame`.
+            if tx.kind().is_call() {
+                // Nonce is already checked
+                caller_account.info.nonce = caller_account.info.nonce.saturating_add(1);
+            }
             // touch account so we know it is changed.
             caller_account.data.mark_touch();
         }
@@ -161,7 +160,7 @@ where
     fn last_frame_result(
         &mut self,
         evm: &mut Self::Evm,
-        frame_result: &mut <Self::Frame as Frame>::FrameResult,
+        frame_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
     ) -> Result<(), Self::Error> {
         let instruction_result = frame_result.interpreter_result().result;
         let gas = frame_result.gas_mut();
@@ -187,7 +186,7 @@ where
     fn refund(
         &self,
         evm: &mut Self::Evm,
-        exec_result: &mut <Self::Frame as Frame>::FrameResult,
+        exec_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
         eip7702_refund: i64,
     ) {
         // skip refund for l1 messages
@@ -201,7 +200,7 @@ where
     fn reward_beneficiary(
         &self,
         evm: &mut Self::Evm,
-        exec_result: &mut <Self::Frame as Frame>::FrameResult,
+        exec_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
     ) -> Result<(), Self::Error> {
         let ctx = evm.ctx();
 
@@ -238,33 +237,24 @@ where
         // reward the beneficiary with the gas fee including the L1 cost of the transaction and mark
         // the account as touched.
         let gas = exec_result.gas();
-        let coinbase_account = ctx.journal().load_account(beneficiary)?;
-        coinbase_account.data.info.balance = coinbase_account
-            .data
-            .info
-            .balance
-            .saturating_add(effective_gas_price * U256::from(gas.spent() - gas.refunded() as u64))
+
+        let reward = effective_gas_price
+            .saturating_mul(U256::from(gas.spent() - gas.refunded() as u64))
             .saturating_add(l1_cost);
-        coinbase_account.data.mark_touch();
+        ctx.journal_mut().balance_incr(beneficiary, reward)?;
 
         Ok(())
     }
 }
 
-impl<EVM, ERROR, FRAME> InspectorHandler for ScrollHandler<EVM, ERROR, FRAME>
+impl<EVM, ERROR> InspectorHandler for ScrollHandler<EVM, ERROR, EthFrame<EthInterpreter>>
 where
     EVM: InspectorEvmTr<
         Context: ScrollContextTr,
+        Frame = EthFrame<EthInterpreter>,
         Inspector: Inspector<<<Self as Handler>::Evm as EvmTr>::Context, EthInterpreter>,
     >,
     ERROR: EvmTrError<EVM>,
-    FRAME: InspectorFrame<
-        Evm = EVM,
-        Error = ERROR,
-        FrameResult = FrameResult,
-        FrameInit = FrameInput,
-        IT = EthInterpreter,
-    >,
 {
     type IT = EthInterpreter;
 }
@@ -291,7 +281,7 @@ mod tests {
     fn test_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context();
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         let err = handler.validate_against_state_and_deduct_caller(&mut evm).unwrap_err();
         assert_eq!(
             err,
@@ -308,7 +298,7 @@ mod tests {
     fn test_load_account() -> Result<(), Box<dyn core::error::Error>> {
         let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         handler.pre_execution(&mut evm)?;
 
         let l1_block_info = evm.ctx().chain.clone();
@@ -322,10 +312,11 @@ mod tests {
         let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         handler.pre_execution(&mut evm)?;
 
-        let caller_account = evm.ctx().journal().load_account(CALLER)?;
+        let ctx = evm.ctx_mut();
+        let caller_account = ctx.journal_mut().load_account(CALLER)?;
         assert_eq!(caller_account.info.balance, U256::ZERO);
         assert_eq!(caller_account.info.nonce, 1);
 
@@ -337,7 +328,7 @@ mod tests {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
-        let mut handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let mut handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         let mut gas = Gas::new(21000);
         gas.set_refund(10);
         gas.set_spent(10);
@@ -361,7 +352,7 @@ mod tests {
         let ctx = context();
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         let mut gas = Gas::new(21000);
         gas.set_refund(10);
         gas.set_spent(10);
@@ -386,7 +377,7 @@ mod tests {
         let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         let gas = Gas::new_spent(21000);
         let mut result = FrameResult::Call(CallOutcome::new(
             InterpreterResult {
@@ -399,7 +390,8 @@ mod tests {
         handler.pre_execution(&mut evm)?;
         handler.reward_beneficiary(&mut evm, &mut result)?;
 
-        let beneficiary = evm.ctx().journal().load_account(BENEFICIARY)?;
+        let ctx = evm.ctx_mut();
+        let beneficiary = ctx.journal_mut().load_account(BENEFICIARY)?;
         assert_eq!(beneficiary.info.balance, MIN_TRANSACTION_COST + L1_DATA_COST);
 
         Ok(())
@@ -410,7 +402,7 @@ mod tests {
         let ctx = context().with_funds(MIN_TRANSACTION_COST + L1_DATA_COST);
 
         let mut evm = ctx.build_scroll();
-        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+        let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
         handler.pre_execution(&mut evm)?;
 
         Ok(())
