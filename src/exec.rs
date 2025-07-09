@@ -4,20 +4,24 @@ use crate::{
 };
 
 use revm::{
-    context::{result::HaltReason, ContextSetters, JournalOutput, JournalTr},
+    context::{
+        result::{ExecResultAndState, HaltReason},
+        ContextSetters, JournalTr,
+    },
     context_interface::{
-        result::{EVMError, ExecutionResult, ResultAndState},
+        result::{EVMError, ExecutionResult},
         Cfg, ContextTr, Database,
     },
-    handler::{EthFrame, EvmTr, Handler, PrecompileProvider},
+    handler::{EthFrame, Handler, PrecompileProvider},
     interpreter::{interpreter::EthInterpreter, InterpreterResult},
+    state::EvmState,
     DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
 };
 use revm_inspector::{InspectCommitEvm, InspectEvm, Inspector, InspectorHandler, JournalExt};
 
 pub trait ScrollContextTr:
     ContextTr<
-    Journal: JournalTr<FinalOutput = JournalOutput>,
+    Journal: JournalTr<State = EvmState>,
     Tx: ScrollTxTr,
     Cfg: Cfg<Spec = ScrollSpecId>,
     Chain = L1BlockInfo,
@@ -27,7 +31,7 @@ pub trait ScrollContextTr:
 
 impl<T> ScrollContextTr for T where
     T: ContextTr<
-        Journal: JournalTr<FinalOutput = JournalOutput>,
+        Journal: JournalTr<State = EvmState>,
         Tx: ScrollTxTr,
         Cfg: Cfg<Spec = ScrollSpecId>,
         Chain = L1BlockInfo,
@@ -35,30 +39,43 @@ impl<T> ScrollContextTr for T where
 {
 }
 
+/// Type alias for the error type of the ScrollEvm.
+pub type ScrollError<CTX> = EVMError<<<CTX as ContextTr>::Db as Database>::Error>;
+
 impl<CTX, INSP, PRECOMPILE> ExecuteEvm
     for ScrollEvm<CTX, INSP, ScrollInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
     CTX: ScrollContextTr + ContextSetters,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    type Output =
-        Result<ResultAndState<HaltReason>, EVMError<<<CTX as ContextTr>::Db as Database>::Error>>;
-
     type Tx = <CTX as ContextTr>::Tx;
-
     type Block = <CTX as ContextTr>::Block;
-
-    fn set_tx(&mut self, tx: Self::Tx) {
-        self.0.ctx.set_tx(tx);
-    }
+    type State = EvmState;
+    type Error = ScrollError<CTX>;
+    type ExecutionResult = ExecutionResult<HaltReason>;
 
     fn set_block(&mut self, block: Self::Block) {
         self.0.ctx.set_block(block);
     }
 
-    fn replay(&mut self) -> Self::Output {
-        let mut h = ScrollHandler::<_, _, EthFrame<_, _, _>>::new();
+    fn transact_one(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.0.ctx.set_tx(tx);
+        let mut h = ScrollHandler::<_, _, EthFrame<EthInterpreter>>::new();
         h.run(self)
+    }
+
+    fn finalize(&mut self) -> Self::State {
+        self.0.ctx.journal_mut().finalize()
+    }
+
+    fn replay(
+        &mut self,
+    ) -> Result<ExecResultAndState<Self::ExecutionResult, Self::State>, Self::Error> {
+        let mut h = ScrollHandler::<_, _, EthFrame<EthInterpreter>>::new();
+        h.run(self).map(|result| {
+            let state = self.finalize();
+            ExecResultAndState::new(result, state)
+        })
     }
 }
 
@@ -68,14 +85,8 @@ where
     CTX: ScrollContextTr<Db: DatabaseCommit> + ContextSetters,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    type CommitOutput =
-        Result<ExecutionResult<HaltReason>, EVMError<<<CTX as ContextTr>::Db as Database>::Error>>;
-
-    fn replay_commit(&mut self) -> Self::CommitOutput {
-        self.replay().map(|r| {
-            self.ctx().db().commit(r.state);
-            r.result
-        })
+    fn commit(&mut self, state: Self::State) {
+        self.0.ctx.db_mut().commit(state)
     }
 }
 
@@ -92,8 +103,9 @@ where
         self.0.inspector = inspector;
     }
 
-    fn inspect_replay(&mut self) -> Self::Output {
-        let mut h = ScrollHandler::<_, _, EthFrame<_, _, _>>::new();
+    fn inspect_one_tx(&mut self, tx: Self::Tx) -> Result<Self::ExecutionResult, Self::Error> {
+        self.0.ctx.set_tx(tx);
+        let mut h = ScrollHandler::<_, _, EthFrame<_>>::new();
         h.inspect_run(self)
     }
 }
@@ -105,10 +117,4 @@ where
     INSP: Inspector<CTX, EthInterpreter>,
     PRECOMPILE: PrecompileProvider<CTX, Output = InterpreterResult>,
 {
-    fn inspect_replay_commit(&mut self) -> Self::CommitOutput {
-        self.inspect_replay().map(|r| {
-            self.ctx().db().commit(r.state);
-            r.result
-        })
-    }
 }

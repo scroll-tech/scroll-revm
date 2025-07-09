@@ -21,7 +21,7 @@ fn test_should_not_apply_eip7623_calldata_gas_for_euclid() {
         .modify_tx_chained(|tx| tx.base.gas_limit = GAS_LIMIT)
         .maybe_with_eip_7623();
     let evm = ctx.build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     // check call passes.
     let _ = handler.validate_initial_tx_gas(&evm).unwrap();
@@ -41,7 +41,7 @@ fn test_should_apply_eip7623_calldata_gas_for_feynman() {
         })
         .maybe_with_eip_7623();
     let evm = ctx.build_scroll();
-    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_, _, _>>::new();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     // check call errors on gas floor more than gas limit.
     let err = handler.validate_initial_tx_gas(&evm).unwrap_err();
