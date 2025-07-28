@@ -5,7 +5,7 @@ use revm::{
     context::Cfg,
     handler::instructions::InstructionProvider,
     interpreter::{
-        as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
+        _count, as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
         interpreter_types::{InputsTr, MemoryTr, RuntimeFlag, StackTr},
         popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionContext,
         InstructionResult, InstructionTable, InterpreterTypes,
