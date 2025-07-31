@@ -72,7 +72,7 @@ where
 /// - `DIFFICULTY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
 ) -> InstructionTable<WIRE, HOST> {
-    let mut table: [fn(InstructionContext<'_, HOST, WIRE>); 256] = instruction_table::<WIRE, HOST>();
+    let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
     table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
