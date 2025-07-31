@@ -16,8 +16,7 @@ use std::rc::Rc;
 
 const HISTORY_STORAGE_ADDRESS: Address = address!("0x0000F90827F1C53a10cb7A02335B175320002935");
 const HISTORY_SERVE_WINDOW: u64 = 8191;
-// const DIFFICULTY: U256 = U256::ZERO;
-const DIFFICULTY: U256 = U256::from_limbs([1233, 0, 0, 0]);
+const DIFFICULTY: U256 = U256::ZERO;
 
 /// Holds the EVM instruction table for Scroll.
 pub struct ScrollInstructions<WIRE: InterpreterTypes, HOST> {
