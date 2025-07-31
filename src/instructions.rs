@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 const HISTORY_STORAGE_ADDRESS: Address = address!("0x0000F90827F1C53a10cb7A02335B175320002935");
 const HISTORY_SERVE_WINDOW: u64 = 8191;
+const DIFFICULTY: U256 = U256::ZERO;
 
 /// Holds the EVM instruction table for Scroll.
 pub struct ScrollInstructions<WIRE: InterpreterTypes, HOST> {
@@ -67,6 +68,7 @@ where
 /// - `TLOAD`
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
+/// - `DIFFICULTY`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
@@ -78,6 +80,7 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
     table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
     table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
+    table[opcode::DIFFICULTY as usize] = difficulty::<WIRE, HOST>;
 
     table
 }
@@ -214,6 +217,16 @@ fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext
     resize_memory!(interpreter, max(dst, src), len);
     // copy memory in place
     interpreter.memory.copy(dst, src, len);
+}
+
+/// Implements the DIFFICULTY instruction.
+///
+/// Pushes the block difficulty(default to 0) onto the stack.
+pub fn difficulty<WIRE: InterpreterTypes, H: Host + ?Sized>(
+    context: InstructionContext<'_, H, WIRE>,
+) {
+    gas!(context.interpreter, gas::BASE);
+    push!(context.interpreter, DIFFICULTY);
 }
 
 // HELPER FUNCTIONS
