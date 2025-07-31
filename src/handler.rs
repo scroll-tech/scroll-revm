@@ -238,9 +238,8 @@ where
         // the account as touched.
         let gas = exec_result.gas();
 
-        let reward = effective_gas_price
-            .saturating_mul(U256::from(gas.spent() - gas.refunded() as u64))
-            .saturating_add(l1_cost);
+        let reward =
+            effective_gas_price.saturating_mul(U256::from(gas.used())).saturating_add(l1_cost);
         ctx.journal_mut().balance_incr(beneficiary, reward)?;
 
         Ok(())
