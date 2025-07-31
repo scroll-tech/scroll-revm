@@ -1,4 +1,7 @@
-use revm::context::{Transaction, TxEnv};
+use revm::{
+    context::{Transaction, TxEnv},
+    handler::SystemCallTx,
+};
 use revm_primitives::{address, Address, Bytes, TxKind, B256, U256};
 
 /// The type for a l1 message transaction.
@@ -133,5 +136,21 @@ impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
 
     fn compression_ratio(&self) -> Option<U256> {
         self.compression_ratio
+    }
+}
+
+impl<TX: Transaction + SystemCallTx> SystemCallTx for ScrollTransaction<TX> {
+    fn new_system_tx_with_caller(
+        caller: Address,
+        system_contract_address: Address,
+        data: Bytes,
+    ) -> Self {
+        // System transactions do not require a rollup fee, as such we don't provide the RLP bytes
+        // nor the compression ratio for it.
+        ScrollTransaction::new(
+            TX::new_system_tx_with_caller(caller, system_contract_address, data),
+            None,
+            None,
+        )
     }
 }
