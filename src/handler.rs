@@ -4,13 +4,13 @@ use crate::{exec::ScrollContextTr, l1block::L1BlockInfo, transaction::ScrollTxTr
 use std::{boxed::Box, string::ToString};
 
 use revm::{
+    bytecode::Bytecode,
     context::{
         result::{HaltReason, InvalidTransaction},
         Block, Cfg, ContextTr, JournalTr, Transaction,
     },
     handler::{
-        post_execution, pre_execution, pre_execution::validate_account_nonce_and_code, EthFrame,
-        EvmTr, EvmTrError, FrameResult, FrameTr, Handler, MainnetHandler,
+        post_execution, EthFrame, EvmTr, EvmTrError, FrameResult, FrameTr, Handler, MainnetHandler,
     },
     interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit, Gas},
     primitives::U256,
@@ -77,22 +77,22 @@ where
         evm: &mut Self::Evm,
     ) -> Result<(), Self::Error> {
         // load caller's account.
-        let ctx = evm.ctx();
-        let caller = ctx.tx().caller();
-        let is_l1_msg = ctx.tx().is_l1_msg();
-        let is_system_tx = ctx.tx().is_system_tx();
-        let spec = ctx.cfg().spec();
-        let is_eip3607_disabled = ctx.cfg().is_eip3607_disabled();
-        let is_nonce_check_disabled = ctx.cfg().is_nonce_check_disabled();
+        let ctx_ref = evm.ctx_ref();
+        let caller = ctx_ref.tx().caller();
+        let is_l1_msg = ctx_ref.tx().is_l1_msg();
+        let is_system_tx = ctx_ref.tx().is_system_tx();
+        let spec = ctx_ref.cfg().spec();
+        let is_eip3607_disabled = ctx_ref.cfg().is_eip3607_disabled();
 
         // execute normal checks and transaction processing logic for non-l1-msgs
         if !is_l1_msg {
             // We deduct caller max balance after minting and before deducing the
             // l1 cost, max values is already checked in pre_validate but l1 cost wasn't.
-            pre_execution::validate_against_state_and_deduct_caller::<_, ERROR>(ctx)?;
+            self.mainnet.validate_against_state_and_deduct_caller(evm)?;
         }
 
         // process rollup fee
+        let ctx = evm.ctx();
         if !is_l1_msg && !is_system_tx {
             let l1_block_info = ctx.chain().clone();
             let Some(rlp_bytes) = ctx.tx().rlp_bytes() else {
@@ -122,13 +122,6 @@ where
             let (tx, journal) = ctx.tx_journal_mut();
             let mut caller_account = journal.load_account(caller)?;
 
-            validate_account_nonce_and_code(
-                &mut caller_account.info,
-                tx.nonce(),
-                is_eip3607_disabled,
-                is_nonce_check_disabled,
-            )?;
-
             // Note: we skip the balance check at pre-execution level if the transaction is a
             // L1 message and Euclid is enabled. This means the L1 message will reach execution
             // stage in revm and revert with `OutOfFunds` in the first frame, but still be included
@@ -142,6 +135,26 @@ where
                         balance: Box::new(caller_account.info.balance),
                     }
                     .into());
+                }
+            }
+
+            // EIP-3607: Reject transactions from senders with deployed code.
+            //
+            // We check the sender of the L1 message is a EOA on the L2.
+            // If the sender is a (delegated) EOA on the L1, it should be a (delegated) EOA
+            // on the L2.
+            // If the sender is a contract on the L1, address aliasing assures with high probability
+            // that the L2 sender would be an EOA.
+            if !is_eip3607_disabled {
+                let caller_info = &caller_account.info;
+                let bytecode = match caller_info.code.as_ref() {
+                    Some(bytecode) => bytecode,
+                    None => &Bytecode::default(),
+                };
+                // Allow EOAs whose code is a valid delegation designation,
+                // i.e. 0xef0100 || address, to continue to originate transactions.
+                if !bytecode.is_empty() && !bytecode.is_eip7702() {
+                    return Err(InvalidTransaction::RejectCallerWithCode.into());
                 }
             }
 
