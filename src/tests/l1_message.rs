@@ -46,7 +46,7 @@ fn test_l1_message_load_accounts() -> Result<(), Box<dyn core::error::Error>> {
 }
 
 #[test]
-fn test_l1_message_should_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
+fn test_l1_message_should_not_deduct_caller() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
     let mut evm = ctx.build_scroll();
@@ -86,7 +86,7 @@ fn test_l1_message_last_frame_result() -> Result<(), Box<dyn core::error::Error>
 }
 
 #[test]
-fn test_l1_message_refund() -> Result<(), Box<dyn core::error::Error>> {
+fn test_l1_message_should_not_refund() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
     let mut evm = ctx.build_scroll();
@@ -107,7 +107,7 @@ fn test_l1_message_refund() -> Result<(), Box<dyn core::error::Error>> {
 }
 
 #[test]
-fn test_l1_message_should_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
+fn test_l1_message_should_not_reward_beneficiary() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context().modify_tx_chained(|tx| tx.base.tx_type = L1_MESSAGE_TYPE);
 
     let mut evm = ctx.build_scroll();
