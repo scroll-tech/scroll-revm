@@ -9,12 +9,14 @@ use std::boxed::Box;
 
 use crate::test_utils::MIN_TRANSACTION_COST;
 use revm::{
+    bytecode::LegacyRawBytecode,
     context::{
-        result::{EVMError, ExecutionResult, HaltReason, ResultAndState},
+        result::{EVMError, ExecutionResult, HaltReason, InvalidTransaction, ResultAndState},
         ContextTr, JournalTr,
     },
     handler::{EthFrame, EvmTr, FrameResult, Handler},
     interpreter::{CallOutcome, Gas, InstructionResult, InterpreterResult},
+    state::Bytecode,
     ExecuteEvm,
 };
 use revm_primitives::U256;
@@ -184,6 +186,27 @@ fn test_l1_message_should_pass_pre_execution() -> Result<(), Box<dyn core::error
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
 
     handler.pre_execution(&mut evm)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_l1_message_eip_3607() -> Result<(), Box<dyn core::error::Error>> {
+    let ctx = context()
+        .modify_tx_chained(|tx| {
+            tx.base.tx_type = L1_MESSAGE_TYPE;
+        })
+        // set the caller nonce to 1 and check pre execution passes.
+        .modify_journal_chained(|journal| {
+            let caller = journal.load_account(CALLER).unwrap();
+            caller.data.info.code =
+                Some(Bytecode::LegacyAnalyzed(LegacyRawBytecode([1u8; 2].into()).into_analyzed()));
+        });
+    let mut evm = ctx.build_scroll();
+    let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
+
+    let err = handler.pre_execution(&mut evm).unwrap_err();
+    assert_eq!(err, EVMError::Transaction(InvalidTransaction::RejectCallerWithCode));
 
     Ok(())
 }
