@@ -6,13 +6,13 @@ use revm::{
     context::{Cfg, ContextTr},
     handler::{EthPrecompiles, PrecompileProvider},
     interpreter::{InputsImpl, InterpreterResult},
-    precompile::{self, secp256r1, PrecompileError, PrecompileWithAddress, Precompiles},
+    precompile::{self, secp256r1, Precompile, PrecompileError, PrecompileId, Precompiles},
     primitives::Address,
 };
 use revm_primitives::hardfork::SpecId;
 
 mod blake2;
-mod bn128;
+mod bn254;
 mod hash;
 mod modexp;
 
@@ -44,8 +44,8 @@ impl ScrollPrecompileProvider {
 
 /// A helper function that creates a precompile that returns `PrecompileError::Other("Precompile not
 /// implemented".into())` for a given address.
-const fn precompile_not_implemented(address: Address) -> PrecompileWithAddress {
-    PrecompileWithAddress(address, |_input: &[u8], _gas_limit: u64| {
+const fn precompile_not_implemented(id: PrecompileId, address: Address) -> Precompile {
+    Precompile::new(id, address, |_input: &[u8], _gas_limit: u64| {
         Err(PrecompileError::Other("NotImplemented: Precompile not implemented".into()))
     })
 }
@@ -62,9 +62,9 @@ pub(crate) fn pre_bernoulli() -> &'static Precompiles {
             hash::ripemd160::SHANGHAI,
             precompile::identity::FUN,
             modexp::BERNOULLI,
-            precompile::bn128::add::ISTANBUL,
-            precompile::bn128::mul::ISTANBUL,
-            bn128::pair::BERNOULLI,
+            precompile::bn254::add::ISTANBUL,
+            precompile::bn254::mul::ISTANBUL,
+            bn254::pair::BERNOULLI,
             blake2::SHANGHAI,
         ]);
 
@@ -97,7 +97,7 @@ pub(crate) fn feynman() -> &'static Precompiles {
     static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = euclid().clone();
-        precompiles.extend([bn128::pair::FEYNMAN]);
+        precompiles.extend([bn254::pair::FEYNMAN]);
         Box::new(precompiles)
     })
 }
@@ -149,7 +149,7 @@ impl Default for ScrollPrecompileProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::precompile::bn128::pair;
+    use crate::precompile::bn254::pair;
     use revm::primitives::hex;
 
     #[test]
@@ -162,13 +162,13 @@ mod tests {
                 .unwrap();
 
         // Euclid version should reject this input
-        let f = euclid().get(&pair::ADDRESS).expect("precompile exists");
-        let outcome = f(&input, u64::MAX);
+        let precompile = euclid().get(&pair::ADDRESS).expect("precompile exists");
+        let outcome = precompile.execute(&input, u64::MAX);
         assert!(outcome.is_err());
 
         // Feynman version should accept this input
-        let f = feynman().get(&pair::ADDRESS).expect("precompile exists");
-        let outcome = f(&input, u64::MAX).expect("call succeeds");
+        let precompile = feynman().get(&pair::ADDRESS).expect("precompile exists");
+        let outcome = precompile.execute(&input, u64::MAX).expect("call succeeds");
         assert_eq!(outcome.bytes, expected);
     }
 }
