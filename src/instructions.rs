@@ -7,8 +7,8 @@ use revm::{
     interpreter::{
         _count, as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
         interpreter_types::{InputsTr, MemoryTr, RuntimeFlag, StackTr},
-        popn, popn_top, push, require_non_staticcall, resize_memory, Host, InstructionContext,
-        InstructionResult, InstructionTable, InterpreterTypes,
+        popn, popn_top, push, require_non_staticcall, resize_memory, Host, Instruction,
+        InstructionContext, InstructionResult, InstructionTable, InterpreterTypes,
     },
     primitives::{address, keccak256, Address, BLOCK_HASH_HISTORY, U256},
 };
@@ -74,13 +74,14 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     let mut table = instruction_table::<WIRE, HOST>();
 
     // override the instructions
-    table[opcode::BLOCKHASH as usize] = blockhash::<WIRE, HOST>;
-    table[opcode::BASEFEE as usize] = basefee::<WIRE, HOST>;
-    table[opcode::TSTORE as usize] = tstore::<WIRE, HOST>;
-    table[opcode::TLOAD as usize] = tload::<WIRE, HOST>;
-    table[opcode::SELFDESTRUCT as usize] = selfdestruct::<WIRE, HOST>;
-    table[opcode::MCOPY as usize] = mcopy::<WIRE, HOST>;
-    table[opcode::DIFFICULTY as usize] = difficulty::<WIRE, HOST>;
+    // static gas values taken from <https://github.com/bluealloy/revm/blob/v86/crates/interpreter/src/instructions.rs#L84>
+    table[opcode::BLOCKHASH as usize] = Instruction::new(blockhash::<WIRE, HOST>, 20);
+    table[opcode::BASEFEE as usize] = Instruction::new(basefee::<WIRE, HOST>, 2);
+    table[opcode::TSTORE as usize] = Instruction::new(tstore::<WIRE, HOST>, 100);
+    table[opcode::TLOAD as usize] = Instruction::new(tload::<WIRE, HOST>, 100);
+    table[opcode::SELFDESTRUCT as usize] = Instruction::new(selfdestruct::<WIRE, HOST>, 0);
+    table[opcode::MCOPY as usize] = Instruction::new(mcopy::<WIRE, HOST>, 0);
+    table[opcode::DIFFICULTY as usize] = Instruction::new(difficulty::<WIRE, HOST>, 2);
 
     table
 }
