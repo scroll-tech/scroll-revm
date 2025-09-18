@@ -93,11 +93,11 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
 ///
 /// If the requested block number is the current block number, a future block number or a block
 /// number older than `BLOCK_HASH_HISTORY` we return 0.
+/// Gas is accounted in the interpreter <https://github.com/bluealloy/revm/blob/fd52a1fb531f4627ea7e69780aab56536533269d/crates/interpreter/src/interpreter.rs#L278>
 fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
 
-    gas!(interpreter, gas::BLOCKHASH);
     popn_top!([], number, interpreter);
 
     let requested_number = *number;
@@ -144,6 +144,9 @@ fn blockhash<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionCon
     };
 }
 
+/// Implements the SELFDESTRUCT instruction.
+///
+/// Halt execution and register account for later deletion.
 fn selfdestruct<WIRE: InterpreterTypes, H: Host>(context: InstructionContext<'_, H, WIRE>) {
     context.interpreter.halt(InstructionResult::NotActivated);
 }
@@ -151,6 +154,8 @@ fn selfdestruct<WIRE: InterpreterTypes, H: Host>(context: InstructionContext<'_,
 // CURIE OPCODE IMPLEMENTATIONS
 // ================================================================================================
 
+/// EIP-3198: BASEFEE opcode
+/// Gas is accounted in the interpreter <https://github.com/bluealloy/revm/blob/fd52a1fb531f4627ea7e69780aab56536533269d/crates/interpreter/src/interpreter.rs#L278>
 fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
@@ -159,10 +164,16 @@ fn basefee<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionConte
         return;
     }
 
-    gas!(interpreter, gas::BASE);
     push!(interpreter, U256::from(host.basefee()));
 }
 
+/// Store transient storage tied to the account.
+///
+/// If values is different add entry to the journal
+/// so that old state can be reverted if that action is needed.
+///
+/// EIP-1153: Transient storage opcodes
+/// Gas is accounted in the interpreter <https://github.com/bluealloy/revm/blob/fd52a1fb531f4627ea7e69780aab56536533269d/crates/interpreter/src/interpreter.rs#L278>
 fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
@@ -172,13 +183,16 @@ fn tstore<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContex
     }
 
     require_non_staticcall!(interpreter);
-    gas!(interpreter, gas::WARM_STORAGE_READ_COST);
 
     popn!([index, value], interpreter);
 
     host.tstore(interpreter.input.target_address(), index, value);
 }
 
+/// Read transient storage tied to the account.
+///
+/// EIP-1153: Transient storage opcodes
+/// Gas is accounted in the interpreter <https://github.com/bluealloy/revm/blob/fd52a1fb531f4627ea7e69780aab56536533269d/crates/interpreter/src/interpreter.rs#L278>
 fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
@@ -187,13 +201,14 @@ fn tload<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext
         return;
     }
 
-    gas!(interpreter, gas::WARM_STORAGE_READ_COST);
-
     popn_top!([], index, interpreter);
 
     *index = host.tload(interpreter.input.target_address(), *index);
 }
 
+/// Implements the MCOPY instruction.
+///
+/// EIP-5656: Memory copying instruction that copies memory from one location to another.
 fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
     let host = context.host;
     let interpreter = context.interpreter;
@@ -223,10 +238,10 @@ fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext
 /// Implements the DIFFICULTY instruction.
 ///
 /// Pushes the block difficulty(default to 0) onto the stack.
+/// Gas is accounted in the interpreter <https://github.com/bluealloy/revm/blob/fd52a1fb531f4627ea7e69780aab56536533269d/crates/interpreter/src/interpreter.rs#L278>
 pub fn difficulty<WIRE: InterpreterTypes, H: Host + ?Sized>(
     context: InstructionContext<'_, H, WIRE>,
 ) {
-    gas!(context.interpreter, gas::BASE);
     push!(context.interpreter, DIFFICULTY);
 }
 
@@ -245,6 +260,13 @@ fn compute_block_hash(chain_id: u64, block_number: u64) -> U256 {
 
 #[cfg(test)]
 mod tests {
+    use super::{compute_block_hash, make_scroll_instruction_table};
+    use crate::{
+        builder::{DefaultScrollContext, ScrollContext},
+        instructions::HISTORY_STORAGE_ADDRESS,
+        ScrollSpecId::*,
+    };
+
     use revm::{
         bytecode::{opcode::*, Bytecode},
         database::{EmptyDB, InMemoryDB},
@@ -252,14 +274,7 @@ mod tests {
         primitives::{Bytes, U256},
         DatabaseRef,
     };
-
-    use crate::{
-        builder::{DefaultScrollContext, ScrollContext},
-        instructions::HISTORY_STORAGE_ADDRESS,
-        ScrollSpecId::*,
-    };
-
-    use super::{compute_block_hash, make_scroll_instruction_table};
+    use rstest::rstest;
 
     #[test]
     fn test_blockhash_before_feynman() {
@@ -315,5 +330,35 @@ mod tests {
         let expected = expected_block_hash.into();
         let actual = interpreter.stack.pop().expect("stack is not empty");
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(BLOCKHASH, 20)]
+    #[case(BASEFEE, 2)]
+    #[case(TSTORE, 100)]
+    #[case(TLOAD, 100)]
+    #[case(MCOPY, 9)]
+    #[case(SELFDESTRUCT, 0)]
+    #[case(DIFFICULTY, 2)]
+    fn test_gas_used(#[case] opcode: u8, #[case] expected_gas_used: u64) {
+        let (chain_id, current_block, spec) = (123, U256::from(1024), FEYNMAN);
+
+        let db = EmptyDB::new();
+        let mut context = ScrollContext::scroll().with_db(InMemoryDB::new(db));
+        context.modify_block(|block| block.number = current_block);
+        context.modify_cfg(|cfg| cfg.chain_id = chain_id);
+        context.modify_cfg(|cfg| cfg.spec = spec);
+
+        let instructions = make_scroll_instruction_table();
+
+        let bytecode = Bytecode::new_legacy(Bytes::from([opcode, STOP].to_vec()));
+        let mut interpreter = Interpreter::default().with_bytecode(bytecode);
+        let _ = interpreter.stack.push(U256::from(1));
+        let _ = interpreter.stack.push(U256::from(0));
+        let _ = interpreter.stack.push(U256::from(0));
+        interpreter.run_plain(&instructions, &mut context);
+
+        let actual_gas_used = interpreter.gas.used();
+        assert_eq!(actual_gas_used, expected_gas_used);
     }
 }
