@@ -62,6 +62,7 @@ pub fn galileo_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
 mod tests {
     use super::*;
     use revm::primitives::hex;
+    use std::vec;
 
     #[test]
     fn test_galileo_modexp_backward_compatibility() {
