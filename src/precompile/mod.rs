@@ -107,7 +107,7 @@ pub(crate) fn galileo() -> &'static Precompiles {
     static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
     INSTANCE.get_or_init(|| {
         let mut precompiles = feynman().clone();
-        precompiles.extend([modexp::GALILEO]);
+        precompiles.extend([modexp::GALILEO, secp256r1::P256VERIFY_OSAKA]);
         Box::new(precompiles)
     })
 }

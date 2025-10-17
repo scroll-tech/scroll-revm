@@ -19,7 +19,7 @@ pub const BERNOULLI_LEN_LIMIT: U256 = U256::from_limbs([32, 0, 0, 0]);
 pub const BERNOULLI: Precompile = Precompile::new(PrecompileId::ModExp, ADDRESS, bernoulli_run);
 
 /// The Galileo MODEXP precompile.
-pub const GALILEO: Precompile = Precompile::new(PrecompileId::ModExp, ADDRESS, galileo_run);
+pub const GALILEO: Precompile = Precompile::new(PrecompileId::ModExp, ADDRESS, modexp::osaka_run);
 
 /// The bernoulli MODEXP precompile implementation.
 ///
@@ -48,14 +48,6 @@ pub fn bernoulli_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
 
     const OSAKA: bool = false;
     run_inner::<_, OSAKA>(input, gas_limit, 200, berlin_gas_calc)
-}
-
-/// The MODEXP precompile with Galileo (OSAKA) implementation.
-///
-/// This version removes the 32-byte length limit that was present in BERNOULLI,
-/// allowing modexp operations with larger inputs according to the OSAKA specification.
-pub fn galileo_run(input: &[u8], gas_limit: u64) -> PrecompileResult {
-    modexp::osaka_run(input, gas_limit)
 }
 
 #[cfg(test)]
@@ -91,7 +83,7 @@ mod tests {
         let bernoulli_output = bernoulli_result.unwrap();
 
         // Test Galileo behavior
-        let galileo_result = galileo_run(&input, gas_limit);
+        let galileo_result = modexp::osaka_run(&input, gas_limit);
         assert!(galileo_result.is_ok(), "GALILEO modexp should succeed");
         let galileo_output = galileo_result.unwrap();
 
@@ -138,8 +130,18 @@ mod tests {
         );
 
         // Galileo should accept this (no 32-byte limit)
-        let galileo_result = galileo_run(&input, gas_limit);
+        let galileo_result = modexp::osaka_run(&input, gas_limit);
         assert!(galileo_result.is_ok(), "Galileo should accept base_len > 32");
+
+        // Verify the computed result is correct
+        // (0x030303...0303)^5 mod 7 = 0
+        let galileo_output = galileo_result.unwrap();
+        let expected = vec![0u8];
+        assert_eq!(
+            galileo_output.bytes.as_ref(),
+            &expected,
+            "Galileo should compute correct modexp result"
+        );
     }
 
     #[test]
@@ -174,7 +176,7 @@ mod tests {
             let gas_limit = 100000u64;
 
             let bernoulli_result = bernoulli_run(&input, gas_limit).unwrap();
-            let galileo_result = galileo_run(&input, gas_limit).unwrap();
+            let galileo_result = modexp::osaka_run(&input, gas_limit).unwrap();
 
             assert_eq!(
                 bernoulli_result.bytes.as_ref(),

@@ -43,7 +43,7 @@ impl ScrollSpecId {
             Self::DARWIN |
             Self::EUCLID |
             Self::FEYNMAN |
-            Self::Galileo => SpecId::SHANGHAI,
+            Self::GALILEO => SpecId::SHANGHAI,
         }
     }
 }
@@ -76,7 +76,7 @@ impl From<&str> for ScrollSpecId {
             name::DARWIN => Self::DARWIN,
             name::EUCLID => Self::EUCLID,
             name::FEYNMAN => Self::FEYNMAN,
-            name::GALILEO => Self::Galileo,
+            name::GALILEO => Self::GALILEO,
             _ => Self::default(),
         }
     }
@@ -91,7 +91,7 @@ impl From<ScrollSpecId> for &'static str {
             ScrollSpecId::DARWIN => name::DARWIN,
             ScrollSpecId::EUCLID => name::EUCLID,
             ScrollSpecId::FEYNMAN => name::FEYNMAN,
-            ScrollSpecId::Galileo => name::GALILEO,
+            ScrollSpecId::GALILEO => name::GALILEO,
         }
     }
 }
