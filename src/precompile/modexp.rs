@@ -92,7 +92,7 @@ mod tests {
 
         // Test Galileo behavior
         let galileo_result = galileo_run(&input, gas_limit);
-        assert!(galileo_result.is_ok(), "Galileo modexp should succeed");
+        assert!(galileo_result.is_ok(), "GALILEO modexp should succeed");
         let galileo_output = galileo_result.unwrap();
 
         // Verify both produce the same result

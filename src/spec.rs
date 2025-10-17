@@ -12,7 +12,7 @@ pub enum ScrollSpecId {
     #[default]
     EUCLID = 5,
     FEYNMAN = 6,
-    Galileo = 7,
+    GALILEO = 7,
 }
 
 impl ScrollSpecId {

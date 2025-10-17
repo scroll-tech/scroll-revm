@@ -31,7 +31,7 @@ impl ScrollPrecompileProvider {
             ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
             ScrollSpecId::EUCLID => euclid(),
             ScrollSpecId::FEYNMAN => feynman(),
-            ScrollSpecId::Galileo => galileo(),
+            ScrollSpecId::GALILEO => galileo(),
         };
         Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }
