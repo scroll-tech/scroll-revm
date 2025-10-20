@@ -69,6 +69,7 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 /// - `DIFFICULTY`
+/// - `CLZ`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
@@ -82,6 +83,7 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     table[opcode::SELFDESTRUCT as usize] = Instruction::new(selfdestruct::<WIRE, HOST>, 0);
     table[opcode::MCOPY as usize] = Instruction::new(mcopy::<WIRE, HOST>, 0);
     table[opcode::DIFFICULTY as usize] = Instruction::new(difficulty::<WIRE, HOST>, 2);
+    table[opcode::CLZ as usize] = Instruction::new(clz::<WIRE, HOST>, 5);
 
     table
 }
@@ -243,6 +245,23 @@ pub fn difficulty<WIRE: InterpreterTypes, H: Host + ?Sized>(
     context: InstructionContext<'_, H, WIRE>,
 ) {
     push!(context.interpreter, DIFFICULTY);
+}
+
+/// Implements the CLZ instruction
+///
+/// EIP-7939 count leading zeros.
+fn clz<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
+    if !host.cfg().spec().is_enabled_in(ScrollSpecId::GALILEO) {
+        interpreter.halt(InstructionResult::NotActivated);
+        return;
+    }
+
+    popn_top!([], op1, context.interpreter);
+
+    let leading_zeros = op1.leading_zeros();
+    *op1 = U256::from(leading_zeros);
 }
 
 // HELPER FUNCTIONS
