@@ -69,6 +69,7 @@ where
 /// - `SELFDESTRUCT`
 /// - `MCOPY`
 /// - `DIFFICULTY`
+/// - `CLZ`
 pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContextTr>(
 ) -> InstructionTable<WIRE, HOST> {
     let mut table = instruction_table::<WIRE, HOST>();
@@ -82,6 +83,7 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     table[opcode::SELFDESTRUCT as usize] = Instruction::new(selfdestruct::<WIRE, HOST>, 0);
     table[opcode::MCOPY as usize] = Instruction::new(mcopy::<WIRE, HOST>, 0);
     table[opcode::DIFFICULTY as usize] = Instruction::new(difficulty::<WIRE, HOST>, 2);
+    table[opcode::CLZ as usize] = Instruction::new(clz::<WIRE, HOST>, 5);
 
     table
 }
@@ -245,6 +247,23 @@ pub fn difficulty<WIRE: InterpreterTypes, H: Host + ?Sized>(
     push!(context.interpreter, DIFFICULTY);
 }
 
+/// Implements the CLZ instruction
+///
+/// EIP-7939 count leading zeros.
+fn clz<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'_, H, WIRE>) {
+    let host = context.host;
+    let interpreter = context.interpreter;
+    if !host.cfg().spec().is_enabled_in(ScrollSpecId::GALILEO) {
+        interpreter.halt(InstructionResult::NotActivated);
+        return;
+    }
+
+    popn_top!([], op1, interpreter);
+
+    let leading_zeros = op1.leading_zeros();
+    *op1 = U256::from(leading_zeros);
+}
+
 // HELPER FUNCTIONS
 // ================================================================================================
 
@@ -260,7 +279,7 @@ fn compute_block_hash(chain_id: u64, block_number: u64) -> U256 {
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_block_hash, make_scroll_instruction_table};
+    use super::{clz, compute_block_hash, make_scroll_instruction_table};
     use crate::{
         builder::{DefaultScrollContext, ScrollContext},
         instructions::HISTORY_STORAGE_ADDRESS,
@@ -270,7 +289,7 @@ mod tests {
     use revm::{
         bytecode::{opcode::*, Bytecode},
         database::{EmptyDB, InMemoryDB},
-        interpreter::Interpreter,
+        interpreter::{push, InstructionContext, Interpreter},
         primitives::{Bytes, U256},
         DatabaseRef,
     };
@@ -360,5 +379,66 @@ mod tests {
 
         let actual_gas_used = interpreter.gas.used();
         assert_eq!(actual_gas_used, expected_gas_used);
+    }
+
+    #[test]
+    fn test_clz() {
+        use revm::primitives::uint;
+
+        let spec = GALILEO;
+        let db = EmptyDB::new();
+        let mut scroll_context = ScrollContext::scroll().with_db(InMemoryDB::new(db));
+        scroll_context.modify_cfg(|cfg| cfg.spec = spec);
+
+        let mut interpreter = Interpreter::default();
+
+        struct TestCase {
+            value: U256,
+            expected: U256,
+        }
+
+        uint! {
+            let test_cases = [
+                TestCase { value: 0x0_U256, expected: 256_U256 },
+                TestCase { value: 0x1_U256, expected: 255_U256 },
+                TestCase { value: 0x2_U256, expected: 254_U256 },
+                TestCase { value: 0x3_U256, expected: 254_U256 },
+                TestCase { value: 0x4_U256, expected: 253_U256 },
+                TestCase { value: 0x7_U256, expected: 253_U256 },
+                TestCase { value: 0x8_U256, expected: 252_U256 },
+                TestCase { value: 0xff_U256, expected: 248_U256 },
+                TestCase { value: 0x100_U256, expected: 247_U256 },
+                TestCase { value: 0xffff_U256, expected: 240_U256 },
+                TestCase {
+                    value: 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_U256, // U256::MAX
+                    expected: 0_U256,
+                },
+                TestCase {
+                    value: 0x8000000000000000000000000000000000000000000000000000000000000000_U256, // 1 << 255
+                    expected: 0_U256,
+                },
+                TestCase { // Smallest value with 1 leading zero
+                    value: 0x4000000000000000000000000000000000000000000000000000000000000000_U256, // 1 << 254
+                    expected: 1_U256,
+                },
+                TestCase { // Value just below 1 << 255
+                    value: 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff_U256,
+                    expected: 1_U256,
+                },
+            ];
+        }
+
+        for test in test_cases {
+            push!(interpreter, test.value);
+            let context =
+                InstructionContext { host: &mut scroll_context, interpreter: &mut interpreter };
+            clz(context);
+            let res = interpreter.stack.pop().unwrap();
+            assert_eq!(
+                res, test.expected,
+                "CLZ for value {:#x} failed. Expected: {}, Got: {}",
+                test.value, test.expected, res
+            );
+        }
     }
 }
