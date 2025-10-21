@@ -258,7 +258,7 @@ fn clz<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext<'
         return;
     }
 
-    popn_top!([], op1, context.interpreter);
+    popn_top!([], op1, interpreter);
 
     let leading_zeros = op1.leading_zeros();
     *op1 = U256::from(leading_zeros);
