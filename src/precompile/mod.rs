@@ -31,6 +31,7 @@ impl ScrollPrecompileProvider {
             ScrollSpecId::BERNOULLI | ScrollSpecId::CURIE | ScrollSpecId::DARWIN => bernoulli(),
             ScrollSpecId::EUCLID => euclid(),
             ScrollSpecId::FEYNMAN => feynman(),
+            ScrollSpecId::GALILEO => galileo(),
         };
         Self { precompile_provider: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
     }
@@ -98,6 +99,15 @@ pub(crate) fn feynman() -> &'static Precompiles {
     INSTANCE.get_or_init(|| {
         let mut precompiles = euclid().clone();
         precompiles.extend([bn254::pair::FEYNMAN]);
+        Box::new(precompiles)
+    })
+}
+
+pub(crate) fn galileo() -> &'static Precompiles {
+    static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
+    INSTANCE.get_or_init(|| {
+        let mut precompiles = feynman().clone();
+        precompiles.extend([modexp::GALILEO, secp256r1::P256VERIFY_OSAKA]);
         Box::new(precompiles)
     })
 }
