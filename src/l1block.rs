@@ -248,22 +248,65 @@ impl L1BlockInfo {
             .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for penalty
     }
 
+    fn calculate_tx_l1_cost_galileo(
+        &self,
+        input: &[u8],
+        spec_id: ScrollSpecId,
+        compressed_size: U256,
+    ) -> U256 {
+        // rollup_fee(tx) = (execScalar * l1BaseFee + blobScalar * l1BlobBaseFee) *
+        //     compressed_size(tx) / PRECISION
+        //
+        // Where:
+        // compressed_size(tx) = min(size(zstd(tx)), size(tx))
+
+        let tx_size = U256::from(input.len());
+
+        assert!(
+            compressed_size <= tx_size,
+            "transaction compressed size {compressed_size} must be less than or equal to the original size {tx_size}"
+        );
+
+        let exec_scalar = self
+            .l1_commit_scalar
+            .unwrap_or_else(|| panic!("missing exec scalar in spec_id={spec_id:?}"));
+
+        let compressed_blob_scalar = self
+            .l1_blob_scalar
+            .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={spec_id:?}"));
+
+        let l1_blob_base_fee = self
+            .l1_blob_base_fee
+            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
+
+        let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
+        let component_blob = compressed_blob_scalar.saturating_mul(l1_blob_base_fee);
+        let fee_per_byte = component_exec.saturating_add(component_blob);
+
+        fee_per_byte.saturating_mul(compressed_size).wrapping_div(TX_L1_FEE_PRECISION_U256)
+    }
+
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
     pub fn calculate_tx_l1_cost(
         &self,
         input: &[u8],
         spec_id: ScrollSpecId,
         compression_ratio: Option<U256>,
+        compressed_size: Option<U256>,
     ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
         } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
-        } else {
+        } else if !spec_id.is_enabled_in(ScrollSpecId::GALILEO) {
             let compression_ratio = compression_ratio.unwrap_or_else(|| {
                 panic!("compression ratio should be set in spec_id={spec_id:?}")
             });
             self.calculate_tx_l1_cost_feynman(input, spec_id, compression_ratio)
+        } else {
+            let compressed_size = compressed_size
+                .unwrap_or_else(|| panic!("compressed size should be set in spec_id={spec_id:?}"));
+            self.calculate_tx_l1_cost_galileo(input, spec_id, compressed_size)
         };
         l1_cost.min(U64_MAX)
     }
