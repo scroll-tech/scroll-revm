@@ -26,6 +26,12 @@ pub trait ScrollTxTr: Transaction {
     /// with posting the transaction on L1.
     /// Note: compression_ratio(tx) = size(tx) * 1e9 / size(zstd(tx))
     fn compression_ratio(&self) -> Option<U256>;
+
+    /// The compressed size of the transaction which is used to calculate the cost associated
+    /// with posting the transaction on L1.
+    /// Note: compression_ratio(tx) = size(zstd(tx))
+    // TODO: Decide if we should use `raw` (rlp-encoded tx) or `tx.Data()` (payload) here.
+    fn compressed_size(&self) -> Option<U256>;
 }
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
@@ -36,17 +42,28 @@ pub struct ScrollTransaction<T: Transaction> {
     pub base: T,
     pub rlp_bytes: Option<Bytes>,
     pub compression_ratio: Option<U256>,
+    pub compressed_size: Option<U256>,
 }
 
 impl<T: Transaction> ScrollTransaction<T> {
-    pub fn new(base: T, rlp_bytes: Option<Bytes>, compression_ratio: Option<U256>) -> Self {
-        Self { base, rlp_bytes, compression_ratio }
+    pub fn new(
+        base: T,
+        rlp_bytes: Option<Bytes>,
+        compression_ratio: Option<U256>,
+        compressed_size: Option<U256>,
+    ) -> Self {
+        Self { base, rlp_bytes, compression_ratio, compressed_size }
     }
 }
 
 impl Default for ScrollTransaction<TxEnv> {
     fn default() -> Self {
-        Self { base: TxEnv::default(), rlp_bytes: None, compression_ratio: None }
+        Self {
+            base: TxEnv::default(),
+            rlp_bytes: None,
+            compression_ratio: None,
+            compressed_size: None,
+        }
     }
 }
 
@@ -137,6 +154,10 @@ impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
     fn compression_ratio(&self) -> Option<U256> {
         self.compression_ratio
     }
+
+    fn compressed_size(&self) -> Option<U256> {
+        self.compressed_size
+    }
 }
 
 impl<TX: Transaction + SystemCallTx> SystemCallTx for ScrollTransaction<TX> {
@@ -149,6 +170,7 @@ impl<TX: Transaction + SystemCallTx> SystemCallTx for ScrollTransaction<TX> {
         // nor the compression ratio for it.
         ScrollTransaction::new(
             TX::new_system_tx_with_caller(caller, system_contract_address, data),
+            None,
             None,
             None,
         )
