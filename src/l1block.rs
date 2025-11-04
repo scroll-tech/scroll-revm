@@ -360,9 +360,10 @@ mod tests {
         };
 
         for tt in tests {
+            let tx_size = 1e10 as u32; // dummy, but make sure this value is larger than the compressed size
             let spec = ScrollSpecId::GALILEO;
             let expected = U256::from_str(tt.expected).unwrap();
-            let actual = gpo.calculate_tx_l1_cost_galileo(1e10 as u32, spec, tt.csize);
+            let actual = gpo.calculate_tx_l1_cost_galileo(tx_size, spec, tt.csize);
             assert_eq!(expected, actual, "failed case: {}", tt.name);
         }
     }
