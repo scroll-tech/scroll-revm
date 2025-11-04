@@ -281,9 +281,11 @@ impl L1BlockInfo {
             .l1_blob_base_fee
             .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
 
-        let penalty_factor = self
-            .penalty_factor
-            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={spec_id:?}"));
+        let penalty_factor = match self.penalty_factor {
+            Some(f) if f == U256::from(0) => U256::from(1), // sanitize zero penalty factor
+            Some(f) => f,
+            None => panic!("missing penalty factor in spec_id={spec_id:?}"),
+        };
 
         // fee_per_byte = (exec_scalar * l1_base_fee) + (blob_scalar * l1_blob_base_fee)
         let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
