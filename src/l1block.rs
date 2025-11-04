@@ -360,7 +360,6 @@ mod tests {
         };
 
         for tt in tests {
-            println!("Running test: {}", tt.name);
             let spec = ScrollSpecId::GALILEO;
             let expected = U256::from_str(tt.expected).unwrap();
             let actual = gpo.calculate_tx_l1_cost_galileo(1e10 as u32, spec, tt.csize);
