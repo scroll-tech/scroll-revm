@@ -254,11 +254,13 @@ impl L1BlockInfo {
         spec_id: ScrollSpecId,
         compressed_size: U256,
     ) -> U256 {
-        // rollup_fee(tx) = (execScalar * l1BaseFee + blobScalar * l1BlobBaseFee) *
-        //     compressed_size(tx) / PRECISION
+        // Post Galileo rollup fee formula:
+        // rollup_fee(tx) = fee_per_byte * compressed_size(tx) * (1 + penalty(tx)) / PRECISION
         //
         // Where:
-        // compressed_size(tx) = min(size(zstd(tx)), size(tx))
+        // fee_per_byte = (exec_scalar * l1_base_fee + blob_scalar * l1_blob_base_fee)
+        // compressed_size(tx) = min(len(zstd(rlp(tx))), len(rlp(tx)))
+        // penalty(tx) = compressed_size(tx) / penalty_factor
 
         let tx_size = U256::from(input.len());
 
@@ -271,7 +273,7 @@ impl L1BlockInfo {
             .l1_commit_scalar
             .unwrap_or_else(|| panic!("missing exec scalar in spec_id={spec_id:?}"));
 
-        let compressed_blob_scalar = self
+        let blob_scalar = self
             .l1_blob_scalar
             .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={spec_id:?}"));
 
@@ -279,11 +281,23 @@ impl L1BlockInfo {
             .l1_blob_base_fee
             .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
 
+        let penalty_factor = self
+            .penalty_factor
+            .unwrap_or_else(|| panic!("missing penalty factor in spec_id={spec_id:?}"));
+
+        // fee_per_byte = (exec_scalar * l1_base_fee) + (blob_scalar * l1_blob_base_fee)
         let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
-        let component_blob = compressed_blob_scalar.saturating_mul(l1_blob_base_fee);
+        let component_blob = blob_scalar.saturating_mul(l1_blob_base_fee);
         let fee_per_byte = component_exec.saturating_add(component_blob);
 
-        fee_per_byte.saturating_mul(compressed_size).wrapping_div(TX_L1_FEE_PRECISION_U256)
+        // base_term = fee_per_byte * compressed_size
+        let base_term = fee_per_byte.saturating_mul(compressed_size);
+
+        // penalty_term = (base_term * compressed_size) / penalty_factor
+        let penalty_term = base_term.saturating_mul(compressed_size).wrapping_div(penalty_factor);
+
+        // rollup_fee = (base_term + penalty_term) / PRECISION
+        base_term.saturating_add(penalty_term).wrapping_div(TX_L1_FEE_PRECISION_U256)
     }
 
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
