@@ -250,9 +250,9 @@ impl L1BlockInfo {
 
     fn calculate_tx_l1_cost_galileo(
         &self,
-        input: &[u8],
+        tx_size: u32, // size of the original rlp-encoded transaction
         spec_id: ScrollSpecId,
-        compressed_size: U256,
+        compressed_size: u32, // size of the compressed rlp-encoded transaction
     ) -> U256 {
         // Post Galileo rollup fee formula:
         // rollup_fee(tx) = fee_per_byte * compressed_size(tx) * (1 + penalty(tx)) / PRECISION
@@ -262,12 +262,12 @@ impl L1BlockInfo {
         // compressed_size(tx) = min(len(zstd(rlp(tx))), len(rlp(tx)))
         // penalty(tx) = compressed_size(tx) / penalty_factor
 
-        let tx_size = U256::from(input.len());
-
         assert!(
             compressed_size <= tx_size,
             "transaction compressed size {compressed_size} must be less than or equal to the original size {tx_size}"
         );
+
+        let compressed_size = U256::from(compressed_size);
 
         let exec_scalar = self
             .l1_commit_scalar
@@ -306,7 +306,7 @@ impl L1BlockInfo {
         input: &[u8],
         spec_id: ScrollSpecId,
         compression_ratio: Option<U256>,
-        compressed_size: Option<U256>,
+        compressed_size: Option<u32>,
     ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
@@ -320,8 +320,49 @@ impl L1BlockInfo {
         } else {
             let compressed_size = compressed_size
                 .unwrap_or_else(|| panic!("compressed size should be set in spec_id={spec_id:?}"));
-            self.calculate_tx_l1_cost_galileo(input, spec_id, compressed_size)
+            self.calculate_tx_l1_cost_galileo(input.len() as u32, spec_id, compressed_size)
         };
         l1_cost.min(U64_MAX)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revm::primitives::uint;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_rollup_fee_galileo() {
+        struct TestCase<'a> {
+            name: &'a str,     // test case label
+            csize: u32,        // compressed size
+            expected: &'a str, // use string to avoid long literal issues
+        }
+
+        let tests = [
+            TestCase { name: "50-byte tx", csize: 50, expected: "171557471810" }, /* ~0.06 cents */
+            TestCase { name: "100-byte tx", csize: 100, expected: "344821983141" }, /* ~0.12 cents */
+            TestCase { name: "1-KiB tx", csize: 1024, expected: "3854009072433" }, /* ~1.35 cents */
+            TestCase { name: "10-KiB tx", csize: 10 * 1024, expected: "70759382824796" }, /* ~24.77 cents */
+            TestCase { name: "1-MiB", csize: 1024 * 1024, expected: "378961881717079120" }, /* ~1325 USD */
+        ];
+
+        let gpo = L1BlockInfo {
+            l1_base_fee: uint!(1_000_000_000_U256),            // 1 gwei
+            l1_blob_base_fee: Some(uint!(1_000_000_000_U256)), // 1 gwei
+            l1_commit_scalar: Some(uint!(2394981796_U256)),    // 2.39
+            l1_blob_scalar: Some(uint!(1019097245_U256)),      // 1.02
+            penalty_factor: Some(uint!(10000_U256)),
+            ..Default::default()
+        };
+
+        for tt in tests {
+            println!("Running test: {}", tt.name);
+            let spec = ScrollSpecId::GALILEO;
+            let expected = U256::from_str(tt.expected).unwrap();
+            let actual = gpo.calculate_tx_l1_cost_galileo(1e10 as u32, spec, tt.csize);
+            assert_eq!(expected, actual, "failed case: {}", tt.name);
+        }
     }
 }
