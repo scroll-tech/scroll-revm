@@ -27,10 +27,9 @@ pub trait ScrollTxTr: Transaction {
     /// Note: compression_ratio(tx) = size(tx) * 1e9 / size(zstd(tx))
     fn compression_ratio(&self) -> Option<U256>;
 
-    /// The compressed size of the transaction which is used to calculate the cost associated
-    /// with posting the transaction on L1.
-    /// Note: compression_ratio(tx) = size(zstd(tx))
-    // TODO: Decide if we should use `raw` (rlp-encoded tx) or `tx.Data()` (payload) here.
+    /// The size of the full rlp-encoded transaction after compression.
+    /// This is used for calculating the cost associated with posting the transaction on L1.
+    /// Note: compressed_size(tx) = min(size(zstd(rlp(tx))), size(rlp(tx)))
     fn compressed_size(&self) -> Option<U256>;
 }
 
