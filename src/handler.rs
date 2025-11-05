@@ -102,8 +102,12 @@ where
             };
 
             // Deduct l1 fee from caller.
-            let tx_l1_cost =
-                l1_block_info.calculate_tx_l1_cost(rlp_bytes, spec, ctx.tx().compression_ratio());
+            let tx_l1_cost = l1_block_info.calculate_tx_l1_cost(
+                rlp_bytes,
+                spec,
+                ctx.tx().compression_ratio(),
+                ctx.tx().compressed_size(),
+            );
             let caller_account = ctx.journal_mut().load_account(caller)?;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
@@ -242,6 +246,7 @@ where
                 rlp_bytes,
                 ctx.cfg().spec(),
                 ctx.tx().compression_ratio(),
+                ctx.tx().compressed_size(),
             )
         } else {
             U256::from(0)

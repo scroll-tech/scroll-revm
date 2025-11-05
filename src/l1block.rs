@@ -248,23 +248,111 @@ impl L1BlockInfo {
             .wrapping_div(TX_L1_FEE_PRECISION_U256) // account for penalty
     }
 
+    fn calculate_tx_l1_cost_galileo(
+        &self,
+        tx_size: usize, // size of the original rlp-encoded transaction
+        spec_id: ScrollSpecId,
+        compressed_size: usize, // size of the compressed rlp-encoded transaction
+    ) -> U256 {
+        // Post Galileo rollup fee formula:
+        // rollup_fee(tx) = fee_per_byte * compressed_size(tx) * (1 + penalty(tx)) / PRECISION
+        //
+        // Where:
+        // fee_per_byte = (exec_scalar * l1_base_fee + blob_scalar * l1_blob_base_fee)
+        // compressed_size(tx) = min(len(zstd(rlp(tx))), len(rlp(tx)))
+        // penalty(tx) = compressed_size(tx) / penalty_factor
+
+        assert!(
+            compressed_size <= tx_size,
+            "transaction compressed size {compressed_size} must be less than or equal to the original size {tx_size}"
+        );
+
+        let compressed_size = U256::from(compressed_size);
+
+        let exec_scalar = self
+            .l1_commit_scalar
+            .unwrap_or_else(|| panic!("missing exec scalar in spec_id={spec_id:?}"));
+
+        let blob_scalar = self
+            .l1_blob_scalar
+            .unwrap_or_else(|| panic!("missing l1 blob scalar in spec_id={spec_id:?}"));
+
+        let l1_blob_base_fee = self
+            .l1_blob_base_fee
+            .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
+
+        let penalty_factor = match self.penalty_factor {
+            Some(f) if f == U256::ZERO => U256::ONE, // sanitize zero penalty factor
+            Some(f) => f,
+            None => panic!("missing penalty factor in spec_id={spec_id:?}"),
+        };
+
+        // fee_per_byte = (exec_scalar * l1_base_fee) + (blob_scalar * l1_blob_base_fee)
+        let component_exec = exec_scalar.saturating_mul(self.l1_base_fee);
+        let component_blob = blob_scalar.saturating_mul(l1_blob_base_fee);
+        let fee_per_byte = component_exec.saturating_add(component_blob);
+
+        // base_term = fee_per_byte * compressed_size
+        let base_term = fee_per_byte.saturating_mul(compressed_size);
+
+        // penalty_term = (base_term * compressed_size) / penalty_factor
+        let penalty_term = base_term.saturating_mul(compressed_size).wrapping_div(penalty_factor);
+
+        // rollup_fee = (base_term + penalty_term) / PRECISION
+        base_term.saturating_add(penalty_term).wrapping_div(TX_L1_FEE_PRECISION_U256)
+    }
+
     /// Calculate the gas cost of a transaction based on L1 block data posted on L2.
     pub fn calculate_tx_l1_cost(
         &self,
         input: &[u8],
         spec_id: ScrollSpecId,
         compression_ratio: Option<U256>,
+        compressed_size: Option<usize>,
     ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
         } else if !spec_id.is_enabled_in(ScrollSpecId::FEYNMAN) {
             self.calculate_tx_l1_cost_curie(input, spec_id)
-        } else {
+        } else if !spec_id.is_enabled_in(ScrollSpecId::GALILEO) {
             let compression_ratio = compression_ratio.unwrap_or_else(|| {
                 panic!("compression ratio should be set in spec_id={spec_id:?}")
             });
             self.calculate_tx_l1_cost_feynman(input, spec_id, compression_ratio)
+        } else {
+            let compressed_size = compressed_size
+                .unwrap_or_else(|| panic!("compressed size should be set in spec_id={spec_id:?}"));
+            self.calculate_tx_l1_cost_galileo(input.len(), spec_id, compressed_size)
         };
         l1_cost.min(U64_MAX)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revm::primitives::uint;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(50, uint!(171557471810_U256))] // ~0.06 cents
+    #[case(100, uint!(344821983141_U256))] // ~0.12 cents
+    #[case(1024, uint!(3854009072433_U256))] // ~1.35 cents
+    #[case(10 * 1024, uint!(70759382824796_U256))] // ~24.77 cents
+    #[case(1024 * 1024, uint!(378961881717079120_U256))] // ~1325 USD
+    fn test_rollup_fee_galileo(#[case] compressed_size: usize, #[case] expected: U256) {
+        let gpo = L1BlockInfo {
+            l1_base_fee: uint!(1_000_000_000_U256),            // 1 gwei
+            l1_blob_base_fee: Some(uint!(1_000_000_000_U256)), // 1 gwei
+            l1_commit_scalar: Some(uint!(2394981796_U256)),    // 2.39
+            l1_blob_scalar: Some(uint!(1019097245_U256)),      // 1.02
+            penalty_factor: Some(uint!(10000_U256)),
+            ..Default::default()
+        };
+
+        let tx_size = 1e10 as usize; // dummy, but make sure this value is larger than the compressed size
+        let spec = ScrollSpecId::GALILEO;
+        let actual = gpo.calculate_tx_l1_cost_galileo(tx_size, spec, compressed_size);
+        assert_eq!(expected, actual);
     }
 }
