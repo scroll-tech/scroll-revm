@@ -30,7 +30,7 @@ pub trait ScrollTxTr: Transaction {
     /// The size of the full rlp-encoded transaction after compression.
     /// This is used for calculating the cost associated with posting the transaction on L1.
     /// Note: compressed_size(tx) = min(size(zstd(rlp(tx))), size(rlp(tx)))
-    fn compressed_size(&self) -> Option<u32>;
+    fn compressed_size(&self) -> Option<usize>;
 }
 
 /// A Scroll transaction. Wraps around a base transaction and provides the optional RLPed bytes for
@@ -41,7 +41,7 @@ pub struct ScrollTransaction<T: Transaction> {
     pub base: T,
     pub rlp_bytes: Option<Bytes>,
     pub compression_ratio: Option<U256>,
-    pub compressed_size: Option<u32>,
+    pub compressed_size: Option<usize>,
 }
 
 impl<T: Transaction> ScrollTransaction<T> {
@@ -49,7 +49,7 @@ impl<T: Transaction> ScrollTransaction<T> {
         base: T,
         rlp_bytes: Option<Bytes>,
         compression_ratio: Option<U256>,
-        compressed_size: Option<u32>,
+        compressed_size: Option<usize>,
     ) -> Self {
         Self { base, rlp_bytes, compression_ratio, compressed_size }
     }
@@ -154,7 +154,7 @@ impl<T: Transaction> ScrollTxTr for ScrollTransaction<T> {
         self.compression_ratio
     }
 
-    fn compressed_size(&self) -> Option<u32> {
+    fn compressed_size(&self) -> Option<usize> {
         self.compressed_size
     }
 }

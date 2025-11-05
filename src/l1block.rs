@@ -250,9 +250,9 @@ impl L1BlockInfo {
 
     fn calculate_tx_l1_cost_galileo(
         &self,
-        tx_size: u32, // size of the original rlp-encoded transaction
+        tx_size: usize, // size of the original rlp-encoded transaction
         spec_id: ScrollSpecId,
-        compressed_size: u32, // size of the compressed rlp-encoded transaction
+        compressed_size: usize, // size of the compressed rlp-encoded transaction
     ) -> U256 {
         // Post Galileo rollup fee formula:
         // rollup_fee(tx) = fee_per_byte * compressed_size(tx) * (1 + penalty(tx)) / PRECISION
@@ -282,7 +282,7 @@ impl L1BlockInfo {
             .unwrap_or_else(|| panic!("missing l1 blob base fee in spec_id={spec_id:?}"));
 
         let penalty_factor = match self.penalty_factor {
-            Some(f) if f == U256::from(0) => U256::from(1), // sanitize zero penalty factor
+            Some(f) if f == U256::ZERO => U256::ONE, // sanitize zero penalty factor
             Some(f) => f,
             None => panic!("missing penalty factor in spec_id={spec_id:?}"),
         };
@@ -308,7 +308,7 @@ impl L1BlockInfo {
         input: &[u8],
         spec_id: ScrollSpecId,
         compression_ratio: Option<U256>,
-        compressed_size: Option<u32>,
+        compressed_size: Option<usize>,
     ) -> U256 {
         let l1_cost = if !spec_id.is_enabled_in(ScrollSpecId::CURIE) {
             self.calculate_tx_l1_cost_shanghai(input, spec_id)
@@ -322,7 +322,7 @@ impl L1BlockInfo {
         } else {
             let compressed_size = compressed_size
                 .unwrap_or_else(|| panic!("compressed size should be set in spec_id={spec_id:?}"));
-            self.calculate_tx_l1_cost_galileo(input.len() as u32, spec_id, compressed_size)
+            self.calculate_tx_l1_cost_galileo(input.len(), spec_id, compressed_size)
         };
         l1_cost.min(U64_MAX)
     }
