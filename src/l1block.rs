@@ -332,24 +332,15 @@ impl L1BlockInfo {
 mod tests {
     use super::*;
     use revm::primitives::uint;
-    use std::str::FromStr;
+    use rstest::rstest;
 
-    #[test]
-    fn test_rollup_fee_galileo() {
-        struct TestCase<'a> {
-            name: &'a str,     // test case label
-            csize: u32,        // compressed size
-            expected: &'a str, // use string to avoid long literal issues
-        }
-
-        let tests = [
-            TestCase { name: "50-byte tx", csize: 50, expected: "171557471810" }, /* ~0.06 cents */
-            TestCase { name: "100-byte tx", csize: 100, expected: "344821983141" }, /* ~0.12 cents */
-            TestCase { name: "1-KiB tx", csize: 1024, expected: "3854009072433" }, /* ~1.35 cents */
-            TestCase { name: "10-KiB tx", csize: 10 * 1024, expected: "70759382824796" }, /* ~24.77 cents */
-            TestCase { name: "1-MiB", csize: 1024 * 1024, expected: "378961881717079120" }, /* ~1325 USD */
-        ];
-
+    #[rstest]
+    #[case(50, uint!(171557471810_U256))] // ~0.06 cents
+    #[case(100, uint!(344821983141_U256))] // ~0.12 cents
+    #[case(1024, uint!(3854009072433_U256))] // ~1.35 cents
+    #[case(10 * 1024, uint!(70759382824796_U256))] // ~24.77 cents
+    #[case(1024 * 1024, uint!(378961881717079120_U256))] // ~1325 USD
+    fn test_rollup_fee_galileo(#[case] compressed_size: usize, #[case] expected: U256) {
         let gpo = L1BlockInfo {
             l1_base_fee: uint!(1_000_000_000_U256),            // 1 gwei
             l1_blob_base_fee: Some(uint!(1_000_000_000_U256)), // 1 gwei
@@ -359,12 +350,9 @@ mod tests {
             ..Default::default()
         };
 
-        for tt in tests {
-            let tx_size = 1e10 as u32; // dummy, but make sure this value is larger than the compressed size
-            let spec = ScrollSpecId::GALILEO;
-            let expected = U256::from_str(tt.expected).unwrap();
-            let actual = gpo.calculate_tx_l1_cost_galileo(tx_size, spec, tt.csize);
-            assert_eq!(expected, actual, "failed case: {}", tt.name);
-        }
+        let tx_size = 1e10 as usize; // dummy, but make sure this value is larger than the compressed size
+        let spec = ScrollSpecId::GALILEO;
+        let actual = gpo.calculate_tx_l1_cost_galileo(tx_size, spec, compressed_size);
+        assert_eq!(expected, actual);
     }
 }
