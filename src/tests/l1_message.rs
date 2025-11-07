@@ -7,7 +7,6 @@ use crate::{
 };
 use std::boxed::Box;
 
-use crate::test_utils::MIN_TRANSACTION_COST;
 use revm::{
     bytecode::LegacyRawBytecode,
     context::{
@@ -19,7 +18,7 @@ use revm::{
     state::Bytecode,
     ExecuteEvm,
 };
-use revm_primitives::U256;
+use revm_primitives::{address, bytes, uint, TxKind, U256};
 
 #[test]
 fn test_l1_message_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
@@ -134,7 +133,12 @@ fn test_l1_message_should_not_reward_beneficiary() -> Result<(), Box<dyn core::e
 fn test_l1_message_should_revert_with_out_of_funds() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context().modify_tx_chained(|tx| {
         tx.base.tx_type = L1_MESSAGE_TYPE;
-        tx.base.value = U256::ONE;
+        tx.base.caller = address!("0x0f0afc457ed80dc946c4ba589e4a96eaecb73609");
+        tx.base.kind = TxKind::Call(address!("0x6EA73e05AdC79974B931123675ea8F78FfdacDF0"));
+        tx.base.gas_price = 0;
+        tx.base.gas_limit = 200_000;
+        tx.base.value = uint!(3000000000000000_U256);
+        tx.base.data = bytes!("2fcc29fa0000000000000000000000000f0afc457ed80dc946c4ba589e4a96eaecb73609000000000000000000000000000000000000000000000000000aa87bee5380000000000000000000000000000000000000000000000000000000000000030d40");
     });
     let tx = ctx.tx.clone();
     let mut evm = ctx.build_scroll();
@@ -145,7 +149,7 @@ fn test_l1_message_should_revert_with_out_of_funds() -> Result<(), Box<dyn core:
     assert_eq!(
         result,
         ExecutionResult::Halt {
-            gas_used: MIN_TRANSACTION_COST.to(),
+            gas_used: 21_796, // wrong value: 22_990
             reason: HaltReason::OutOfFunds
         }
     );
