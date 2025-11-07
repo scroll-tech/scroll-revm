@@ -346,7 +346,7 @@ mod tests {
         let _ = interpreter.stack.push(U256::from(target_block));
         interpreter.run_plain(&instructions, &mut context);
 
-        let expected = expected_block_hash.into();
+        let expected: U256 = expected_block_hash.into();
         let actual = interpreter.stack.pop().expect("stack is not empty");
         assert_eq!(actual, expected);
     }

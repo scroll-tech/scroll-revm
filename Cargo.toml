@@ -6,9 +6,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # revm
-revm = { git = "https://github.com/scroll-tech/revm", default-features = false, features = ["enable_eip7702", "enable_eip7623"] }
-revm-primitives = { git = "https://github.com/scroll-tech/revm", default-features = false }
-revm-inspector = { git = "https://github.com/scroll-tech/revm", default-features = false }
+revm = { git = "https://github.com/scroll-tech/revm", branch = "feat/v97", default-features = false, features = ["enable_eip7702", "enable_eip7623"] }
+revm-primitives = { git = "https://github.com/scroll-tech/revm", branch = "feat/v97", default-features = false }
+revm-inspector = { git = "https://github.com/scroll-tech/revm", branch = "feat/v97", default-features = false }
 
 # misc
 auto_impl = "1.2.0"
@@ -28,9 +28,9 @@ test-utils = []
 # See comments in `revm-precompile`
 secp256k1 = ["revm/secp256k1"]
 c-kzg = ["revm/c-kzg"]
-# `kzg-rs` is not audited but useful for `no_std` environment, use it with causing and default to `c-kzg` if possible.
-kzg-rs = ["revm/kzg-rs"]
 blst = ["revm/blst"]
+
+memory_limit = ["revm/memory_limit"]
 
 [dev-dependencies]
 rstest = "0.26.1"
