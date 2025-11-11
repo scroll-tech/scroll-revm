@@ -14,12 +14,15 @@ use revm::{
         result::{EVMError, ExecutionResult, HaltReason, InvalidTransaction, ResultAndState},
         ContextTr, JournalTr,
     },
+    context_interface::result::ExecutionResult::Halt,
     handler::{EthFrame, EvmTr, FrameResult, Handler},
-    interpreter::{CallOutcome, Gas, InstructionResult, InterpreterResult},
+    interpreter::{
+        gas::STANDARD_TOKEN_COST, CallOutcome, Gas, InstructionResult, InterpreterResult,
+    },
     state::Bytecode,
     ExecuteEvm,
 };
-use revm_primitives::U256;
+use revm_primitives::{bytes, U256};
 
 #[test]
 fn test_l1_message_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
@@ -207,6 +210,31 @@ fn test_l1_message_eip_3607() -> Result<(), Box<dyn core::error::Error>> {
 
     let err = handler.pre_execution(&mut evm).unwrap_err();
     assert_eq!(err, EVMError::Transaction(InvalidTransaction::RejectCallerWithCode));
+
+    Ok(())
+}
+
+#[test]
+fn test_l1_message_should_not_have_floor_gas_as_gas_used() -> Result<(), Box<dyn core::error::Error>>
+{
+    let ctx =
+        context().modify_cfg_chained(|cfg| cfg.enable_eip7623 = true).modify_tx_chained(|tx| {
+            tx.base.data =
+                bytes!("0x000000000123456789abcdef00000000123456789abcdef00000000123456789abcdef");
+            tx.base.tx_type = L1_MESSAGE_TYPE;
+            tx.base.caller = CALLER;
+            tx.base.gas_limit = 200000;
+            tx.base.value = U256::ONE;
+        });
+    let tx = ctx.tx.clone();
+    let mut evm = ctx.build_scroll();
+    let res = evm.transact(tx)?;
+
+    let tokens_in_calldata = 4 * 24 + 11;
+    // floor gas is TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata + 21_000 = 22070;
+    let expected_init_gas = STANDARD_TOKEN_COST * tokens_in_calldata + 21_000;
+
+    assert_eq!(res.result, Halt { reason: HaltReason::OutOfFunds, gas_used: expected_init_gas });
 
     Ok(())
 }
