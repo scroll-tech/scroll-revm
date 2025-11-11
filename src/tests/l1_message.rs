@@ -183,8 +183,8 @@ fn test_l1_message_should_pass_pre_execution() -> Result<(), Box<dyn core::error
         })
         // set the caller nonce to 1 and check pre execution passes.
         .modify_journal_chained(|journal| {
-            let caller = journal.load_account(CALLER).unwrap();
-            caller.data.info.nonce += 1;
+            let mut caller = journal.load_account_mut(CALLER).unwrap().data;
+            caller.bump_nonce();
         });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
@@ -202,9 +202,12 @@ fn test_l1_message_eip_3607() -> Result<(), Box<dyn core::error::Error>> {
         })
         // set the caller nonce to 1 and check pre execution passes.
         .modify_journal_chained(|journal| {
-            let caller = journal.load_account(CALLER).unwrap();
-            caller.data.info.code =
-                Some(Bytecode::LegacyAnalyzed(LegacyRawBytecode([1u8; 2].into()).into_analyzed()));
+            let mut caller = journal.load_account_mut(CALLER).unwrap().data;
+            let hash = revm_primitives::keccak256([1u8; 2]);
+            caller.set_code(
+                hash,
+                Bytecode::LegacyAnalyzed(LegacyRawBytecode([1u8; 2].into()).into_analyzed()),
+            )
         });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();

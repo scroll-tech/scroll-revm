@@ -110,7 +110,7 @@ where
                 ctx.tx().compression_ratio(),
                 ctx.tx().compressed_size(),
             );
-            let caller_account = ctx.journal_mut().load_account(caller)?;
+            let mut caller_account = ctx.journal_mut().load_account_mut(caller)?.data;
             if tx_l1_cost.gt(&caller_account.info.balance) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
                     fee: tx_l1_cost.into(),
@@ -118,15 +118,15 @@ where
                 }
                 .into());
             }
-            caller_account.data.info.balance =
-                caller_account.data.info.balance.saturating_sub(tx_l1_cost);
+            let new_balance = caller_account.balance().saturating_sub(tx_l1_cost);
+            caller_account.set_balance(new_balance)
         }
 
         // execute l1 msg checks
         if is_l1_msg {
             // Load caller's account.
             let (tx, journal) = ctx.tx_journal_mut();
-            let mut caller_account = journal.load_account(caller)?;
+            let mut caller_account = journal.load_account_mut(caller)?.data;
 
             // Note: we skip the balance check at pre-execution level if the transaction is a
             // L1 message and Euclid is enabled. This means the L1 message will reach execution
@@ -167,10 +167,10 @@ where
             // Bump the nonce for calls. Nonce for CREATE will be bumped in `make_create_frame`.
             if tx.kind().is_call() {
                 // Nonce is already checked
-                caller_account.info.nonce = caller_account.info.nonce.saturating_add(1);
+                caller_account.bump_nonce();
             }
             // touch account so we know it is changed.
-            caller_account.data.mark_touch();
+            caller_account.touch();
         }
         Ok(())
     }
