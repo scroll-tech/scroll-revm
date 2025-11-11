@@ -12,7 +12,9 @@ use revm::{
     handler::{
         post_execution, EthFrame, EvmTr, EvmTrError, FrameResult, FrameTr, Handler, MainnetHandler,
     },
-    interpreter::{interpreter::EthInterpreter, interpreter_action::FrameInit, Gas},
+    interpreter::{
+        interpreter::EthInterpreter, interpreter_action::FrameInit, Gas, InitialAndFloorGas,
+    },
     primitives::U256,
 };
 use revm_inspector::{Inspector, InspectorEvmTr, InspectorHandler};
@@ -197,6 +199,20 @@ where
         }
 
         Ok(())
+    }
+
+    #[inline]
+    fn eip7623_check_gas_floor(
+        &self,
+        evm: &mut Self::Evm,
+        exec_result: &mut <<Self::Evm as EvmTr>::Frame as FrameTr>::FrameResult,
+        init_and_floor_gas: InitialAndFloorGas,
+    ) {
+        // skip floor gas check for l1 messages.
+        if evm.ctx().tx().is_l1_msg() {
+            return;
+        }
+        self.mainnet.eip7623_check_gas_floor(evm, exec_result, init_and_floor_gas)
     }
 
     #[inline]

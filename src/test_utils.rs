@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 pub const TX_L1_FEE_PRECISION: U256 = U256::from_limbs([1_000_000_000u64, 0, 0, 0]);
 pub const CALLER: Address = address!("0x000000000000000000000000000000000000dead");
-pub const TO: Address = address!("0x0000000000000000000000000000000000000001");
+pub const TO: Address = address!("0x00000000000000000000000000000000000dead1");
 pub const BENEFICIARY: Address = address!("0x0000000000000000000000000000000000000002");
 pub const MIN_TRANSACTION_COST: U256 = U256::from_limbs([21_000u64, 0, 0, 0]);
 pub const L1_DATA_COST: U256 = U256::from_limbs([40_000u64, 0, 0, 0]);
