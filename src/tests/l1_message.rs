@@ -17,12 +17,13 @@ use revm::{
     context_interface::result::ExecutionResult::Halt,
     handler::{EthFrame, EvmTr, FrameResult, Handler},
     interpreter::{
-        gas::STANDARD_TOKEN_COST, CallOutcome, Gas, InstructionResult, InterpreterResult,
+        gas::calculate_initial_tx_gas_for_tx, CallOutcome, Gas, InstructionResult,
+        InterpreterResult,
     },
     state::Bytecode,
     ExecuteEvm,
 };
-use revm_primitives::{bytes, U256};
+use revm_primitives::{bytes, hardfork::SpecId, U256};
 
 #[test]
 fn test_l1_message_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
@@ -228,11 +229,11 @@ fn test_l1_message_should_not_have_floor_gas_as_gas_used() -> Result<(), Box<dyn
         });
     let tx = ctx.tx.clone();
     let mut evm = ctx.build_scroll();
-    let res = evm.transact(tx)?;
+    let res = evm.transact(tx.clone())?;
 
-    let tokens_in_calldata = 4 * 24 + 11;
     // floor gas is TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata + 21_000 = 22070;
-    let expected_init_gas = STANDARD_TOKEN_COST * tokens_in_calldata + 21_000;
+    let expected_init_gas =
+        calculate_initial_tx_gas_for_tx(tx, SpecId::SHANGHAI, true, true).initial_gas;
 
     assert_eq!(res.result, Halt { reason: HaltReason::OutOfFunds, gas_used: expected_init_gas });
 
