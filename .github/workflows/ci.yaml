@@ -32,7 +32,7 @@ jobs:
       - run: cargo test  ${{ matrix.flags }}
 
   check-no-std:
-    name: check no_std ${{ matrix.features }}
+    name: check no_std
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
