@@ -5,7 +5,7 @@ use revm::{
     context::Cfg,
     handler::instructions::InstructionProvider,
     interpreter::{
-        _count, as_u64_saturated, as_usize_or_fail, gas, gas_or_fail, instruction_table,
+        _count, as_u64_saturated, as_usize_or_fail, gas, instruction_table,
         interpreter_types::{InputsTr, MemoryTr, RuntimeFlag, StackTr},
         popn, popn_top, push, require_non_staticcall, resize_memory, Host, Instruction,
         InstructionContext, InstructionResult, InstructionTable, InterpreterTypes,
@@ -81,7 +81,7 @@ pub fn make_scroll_instruction_table<WIRE: InterpreterTypes, HOST: ScrollContext
     table[opcode::TSTORE as usize] = Instruction::new(tstore::<WIRE, HOST>, 100);
     table[opcode::TLOAD as usize] = Instruction::new(tload::<WIRE, HOST>, 100);
     table[opcode::SELFDESTRUCT as usize] = Instruction::new(selfdestruct::<WIRE, HOST>, 0);
-    table[opcode::MCOPY as usize] = Instruction::new(mcopy::<WIRE, HOST>, 0);
+    table[opcode::MCOPY as usize] = Instruction::new(mcopy::<WIRE, HOST>, 3);
     table[opcode::DIFFICULTY as usize] = Instruction::new(difficulty::<WIRE, HOST>, 2);
     table[opcode::CLZ as usize] = Instruction::new(clz::<WIRE, HOST>, 5);
 
@@ -224,7 +224,7 @@ fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext
     // into usize or fail
     let len = as_usize_or_fail!(interpreter, len);
     // deduce gas
-    gas_or_fail!(interpreter, gas::copy_cost_verylow(len));
+    gas!(interpreter, host.gas_params().mcopy_cost(len));
     if len == 0 {
         return;
     }
@@ -232,7 +232,7 @@ fn mcopy<WIRE: InterpreterTypes, H: ScrollContextTr>(context: InstructionContext
     let dst = as_usize_or_fail!(interpreter, dst);
     let src = as_usize_or_fail!(interpreter, src);
     // resize memory
-    resize_memory!(interpreter, max(dst, src), len);
+    resize_memory!(interpreter, host.gas_params(), max(dst, src), len);
     // copy memory in place
     interpreter.memory.copy(dst, src, len);
 }

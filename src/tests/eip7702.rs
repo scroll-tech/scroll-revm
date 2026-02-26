@@ -15,11 +15,11 @@ use revm_primitives::{eip7702, U256};
 #[test]
 fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>> {
     let ctx = context();
-    let evm = ctx.clone().build_scroll();
+    let mut evm = ctx.clone().build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
-    let gas_empty_authorization_list = handler.validate_initial_tx_gas(&evm)?;
+    let gas_empty_authorization_list = handler.validate_initial_tx_gas(&mut evm)?;
 
-    let evm = ctx
+    let mut evm = ctx
         .modify_tx_chained(|tx| {
             tx.base.gas_limit += eip7702::PER_EMPTY_ACCOUNT_COST;
             tx.base.authorization_list = vec![Either::Left(SignedAuthorization::new_unchecked(
@@ -35,7 +35,7 @@ fn test_validate_initial_gas_eip7702() -> Result<(), Box<dyn core::error::Error>
         })
         .build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
-    let gas_with_authorization_list = handler.validate_initial_tx_gas(&evm)?;
+    let gas_with_authorization_list = handler.validate_initial_tx_gas(&mut evm)?;
 
     // initial gas should include eip7702 cost of authorized accounts.
     assert_eq!(

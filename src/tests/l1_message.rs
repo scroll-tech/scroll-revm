@@ -12,18 +12,18 @@ use revm::{
     bytecode::LegacyRawBytecode,
     context::{
         result::{EVMError, ExecutionResult, HaltReason, InvalidTransaction, ResultAndState},
-        ContextTr, JournalTr,
+        ContextTr, JournalTr, Transaction,
     },
-    context_interface::result::ExecutionResult::Halt,
+    context_interface::{
+        cfg::{gas::TOTAL_COST_FLOOR_PER_TOKEN, gas_params::GasId, GasParams},
+        result::ExecutionResult::Halt,
+    },
     handler::{EthFrame, EvmTr, FrameResult, Handler},
-    interpreter::{
-        gas::calculate_initial_tx_gas_for_tx, CallOutcome, Gas, InstructionResult,
-        InterpreterResult,
-    },
+    interpreter::{CallOutcome, Gas, InstructionResult, InterpreterResult},
     state::Bytecode,
     ExecuteEvm,
 };
-use revm_primitives::{bytes, hardfork::SpecId, U256};
+use revm_primitives::{bytes, eip7702, hardfork::SpecId, U256};
 
 #[test]
 fn test_l1_message_validate_lacking_funds() -> Result<(), Box<dyn core::error::Error>> {
@@ -183,8 +183,7 @@ fn test_l1_message_should_pass_pre_execution() -> Result<(), Box<dyn core::error
         })
         // set the caller nonce to 1 and check pre execution passes.
         .modify_journal_chained(|journal| {
-            let caller = journal.load_account(CALLER).unwrap();
-            caller.data.info.nonce += 1;
+            journal.state.entry(CALLER).or_default().info.nonce += 1;
         });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
@@ -200,11 +199,11 @@ fn test_l1_message_eip_3607() -> Result<(), Box<dyn core::error::Error>> {
         .modify_tx_chained(|tx| {
             tx.base.tx_type = L1_MESSAGE_TYPE;
         })
-        // set the caller nonce to 1 and check pre execution passes.
+        // set the caller code to trigger EIP-3607.
         .modify_journal_chained(|journal| {
-            let caller = journal.load_account(CALLER).unwrap();
-            caller.data.info.code =
-                Some(Bytecode::LegacyAnalyzed(LegacyRawBytecode([1u8; 2].into()).into_analyzed()));
+            journal.state.entry(CALLER).or_default().info.code = Some(Bytecode::LegacyAnalyzed(
+                LegacyRawBytecode([1u8; 2].into()).into_analyzed().into(),
+            ));
         });
     let mut evm = ctx.build_scroll();
     let handler = ScrollHandler::<_, EVMError<_>, EthFrame<_>>::new();
@@ -218,8 +217,15 @@ fn test_l1_message_eip_3607() -> Result<(), Box<dyn core::error::Error>> {
 #[test]
 fn test_l1_message_should_not_have_floor_gas_as_gas_used() -> Result<(), Box<dyn core::error::Error>>
 {
-    let ctx =
-        context().modify_cfg_chained(|cfg| cfg.enable_eip7623 = true).modify_tx_chained(|tx| {
+    let ctx = context()
+        .modify_cfg_chained(|cfg| {
+            cfg.enable_eip7623 = true;
+            cfg.gas_params.override_gas([
+                (GasId::tx_floor_cost_per_token(), TOTAL_COST_FLOOR_PER_TOKEN),
+                (GasId::tx_floor_cost_base_gas(), 21000),
+            ]);
+        })
+        .modify_tx_chained(|tx| {
             tx.base.data =
                 bytes!("0x000000000123456789abcdef00000000123456789abcdef00000000123456789abcdef");
             tx.base.tx_type = L1_MESSAGE_TYPE;
@@ -232,8 +238,15 @@ fn test_l1_message_should_not_have_floor_gas_as_gas_used() -> Result<(), Box<dyn
     let res = evm.transact(tx.clone())?;
 
     // floor gas is TOTAL_COST_FLOOR_PER_TOKEN * tokens_in_calldata + 21_000 = 22070;
-    let expected_init_gas =
-        calculate_initial_tx_gas_for_tx(tx, SpecId::SHANGHAI, true, true).initial_gas;
+    let mut gas_params = GasParams::new_spec(SpecId::SHANGHAI);
+    gas_params.override_gas([
+        (GasId::tx_eip7702_per_empty_account_cost(), eip7702::PER_EMPTY_ACCOUNT_COST),
+        (GasId::tx_floor_cost_per_token(), TOTAL_COST_FLOOR_PER_TOKEN),
+        (GasId::tx_floor_cost_base_gas(), 21000),
+    ]);
+    let expected_init_gas = gas_params
+        .initial_tx_gas(tx.input(), tx.kind().is_create(), 0, 0, tx.authorization_list_len() as u64)
+        .initial_gas;
 
     assert_eq!(res.result, Halt { reason: HaltReason::OutOfFunds, gas_used: expected_init_gas });
 

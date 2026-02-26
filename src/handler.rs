@@ -1,10 +1,10 @@
 //! Handler related to Scroll chain.
 
 use crate::{exec::ScrollContextTr, l1block::L1BlockInfo, transaction::ScrollTxTr, ScrollSpecId};
+use revm::context_interface::journaled_state::account::JournaledAccountTr;
 use std::{boxed::Box, string::ToString};
 
 use revm::{
-    bytecode::Bytecode,
     context::{
         result::{HaltReason, InvalidTransaction},
         Block, Cfg, ContextTr, JournalTr, Transaction,
@@ -118,27 +118,26 @@ where
                 tx_l1_cost
             };
 
-            let caller_account = ctx.journal_mut().load_account(caller)?;
+            let mut caller_account = ctx.journal_mut().load_account_mut(caller)?;
 
             // Ensure caller has enough balance to cover L1 cost + optional buffer
-            if l1_cost_with_optional_buffer.gt(&caller_account.info.balance) {
+            if l1_cost_with_optional_buffer.gt(caller_account.balance()) {
                 return Err(InvalidTransaction::LackOfFundForMaxFee {
                     fee: l1_cost_with_optional_buffer.into(),
-                    balance: caller_account.info.balance.into(),
+                    balance: (*caller_account.balance()).into(),
                 }
                 .into());
             }
 
             // Deduct only actual L1 cost (buffer is NOT deducted)
-            caller_account.data.info.balance =
-                caller_account.data.info.balance.saturating_sub(tx_l1_cost);
+            caller_account.decr_balance(tx_l1_cost);
         }
 
         // execute l1 msg checks
         if is_l1_msg {
-            // Load caller's account.
+            // Load caller's account (with code for EIP-3607 check).
             let (tx, journal) = ctx.tx_journal_mut();
-            let mut caller_account = journal.load_account(caller)?;
+            let mut caller_account = journal.load_account_with_code_mut(caller)?;
 
             // Note: we skip the balance check at pre-execution level if the transaction is a
             // L1 message and Euclid is enabled. This means the L1 message will reach execution
@@ -147,10 +146,10 @@ where
             let skip_balance_check = tx.is_l1_msg() && spec.is_enabled_in(ScrollSpecId::EUCLID);
             if !skip_balance_check {
                 let max_balance_spending = tx.max_balance_spending()?;
-                if max_balance_spending > caller_account.info.balance {
+                if max_balance_spending > *caller_account.balance() {
                     return Err(InvalidTransaction::LackOfFundForMaxFee {
                         fee: Box::new(max_balance_spending),
-                        balance: Box::new(caller_account.info.balance),
+                        balance: Box::new(*caller_account.balance()),
                     }
                     .into());
                 }
@@ -164,14 +163,10 @@ where
             // If the sender is a contract on the L1, address aliasing assures with high probability
             // that the L2 sender would be an EOA.
             if !is_eip3607_disabled {
-                let caller_info = &caller_account.info;
-                let bytecode = match caller_info.code.as_ref() {
-                    Some(bytecode) => bytecode,
-                    None => &Bytecode::default(),
-                };
                 // Allow EOAs whose code is a valid delegation designation,
                 // i.e. 0xef0100 || address, to continue to originate transactions.
-                if !bytecode.is_empty() && !bytecode.is_eip7702() {
+                if caller_account.code().map(|b| !b.is_empty() && !b.is_eip7702()).unwrap_or(false)
+                {
                     return Err(InvalidTransaction::RejectCallerWithCode.into());
                 }
             }
@@ -179,10 +174,10 @@ where
             // Bump the nonce for calls. Nonce for CREATE will be bumped in `make_create_frame`.
             if tx.kind().is_call() {
                 // Nonce is already checked
-                caller_account.info.nonce = caller_account.info.nonce.saturating_add(1);
+                caller_account.bump_nonce();
             }
             // touch account so we know it is changed.
-            caller_account.data.mark_touch();
+            caller_account.touch();
         }
         Ok(())
     }
